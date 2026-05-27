@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#FAF8F3">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Mood">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Mood Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500&family=Noto+Sans+KR:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FAF8F3;
+    --bg-2: #F2EEE4;
+    --bg-3: #E8E2D2;
+    --ink: #2D2A24;
+    --ink-2: #6B6558;
+    --ink-3: #9A9384;
+    --line: #DDD5C0;
+    --accent: #C97B5C;
+    --success: #7FA968;
+    --info: #5A7BA8;
+    --warn: #D4A03F;
+    --serif: 'Fraunces', Georgia, serif;
+    --sans: 'Noto Sans KR', -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1C1A16;
+      --bg-2: #26231D;
+      --bg-3: #322E26;
+      --ink: #E8DCC4;
+      --ink-2: #B8AE96;
+      --ink-3: #8B826F;
+      --line: #3A352B;
+      --accent: #D49377;
+      --success: #97C285;
+      --info: #7A99C0;
+      --warn: #D9B05C;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.6; }
+  body { min-height: 100vh; padding: max(env(safe-area-inset-top), 16px) 16px max(env(safe-area-inset-bottom), 80px); max-width: 480px; margin: 0 auto; }
+
+  h1, h2, h3 { font-family: var(--serif); font-weight: 400; letter-spacing: -0.01em; margin: 0; }
+  h1 { font-size: 26px; }
+  h2 { font-size: 20px; }
+  h3 { font-size: 16px; }
+  p { margin: 0; }
+
+  /* Header */
+  .header { margin-bottom: 24px; padding-top: 8px; }
+  .date-line { font-size: 12px; color: var(--ink-3); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 4px; }
+
+  /* Tabs */
+  .tabs { display: flex; background: var(--bg-2); border-radius: 12px; padding: 4px; margin-bottom: 24px; }
+  .tab { flex: 1; border: none; background: transparent; padding: 10px 0; font-size: 13px; font-family: var(--sans); color: var(--ink-2); border-radius: 8px; cursor: pointer; transition: all 0.2s; letter-spacing: 0.02em; }
+  .tab.active { background: var(--bg); color: var(--ink); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+
+  /* Cards */
+  .card { background: var(--bg); border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
+  .card-label { font-size: 13px; font-weight: 500; margin-bottom: 4px; color: var(--ink); }
+  .card-hint { font-size: 12px; color: var(--ink-3); margin-bottom: 14px; line-height: 1.5; }
+
+  /* Sliders */
+  .slider-row { display: flex; align-items: center; gap: 12px; }
+  .slider-emoji { font-size: 20px; }
+  input[type="range"] {
+    flex: 1; -webkit-appearance: none; appearance: none;
+    height: 4px; background: var(--bg-3); border-radius: 2px; outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 22px; height: 22px;
+    background: var(--ink); border-radius: 50%; cursor: pointer; border: 3px solid var(--bg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 22px; height: 22px; background: var(--ink); border-radius: 50%; border: 3px solid var(--bg);
+  }
+  .slider-out { text-align: center; font-size: 13px; color: var(--ink-2); margin-top: 10px; font-family: var(--serif); font-style: italic; }
+
+  /* Textareas */
+  textarea, input[type="text"] {
+    width: 100%; padding: 10px 12px; background: var(--bg-2); border: 1px solid transparent;
+    border-radius: 8px; font-family: var(--sans); font-size: 14px; color: var(--ink);
+    transition: border-color 0.15s; resize: none;
+  }
+  textarea:focus, input[type="text"]:focus { border-color: var(--ink-3); outline: none; background: var(--bg); }
+  textarea { min-height: 56px; }
+  textarea::placeholder, input::placeholder { color: var(--ink-3); }
+
+  /* Buttons grid */
+  .btn-grid { display: grid; gap: 6px; }
+  .btn-grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .btn-grid-5 { grid-template-columns: repeat(5, 1fr); }
+  .opt {
+    padding: 9px 4px; background: var(--bg-2); border: 1px solid transparent;
+    border-radius: 8px; font-size: 13px; font-family: var(--sans); color: var(--ink-2);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .opt:active { transform: scale(0.97); }
+  .opt.on { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 500; }
+
+  .stepper { display: flex; align-items: center; gap: 14px; }
+  .stepper button {
+    width: 36px; height: 36px; padding: 0; background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: 50%; font-size: 18px; color: var(--ink); cursor: pointer;
+  }
+  .stepper-val { font-size: 18px; font-weight: 500; min-width: 24px; text-align: center; font-family: var(--serif); }
+
+  .field-label { font-size: 12px; color: var(--ink-2); margin-bottom: 6px; }
+  .field { margin-bottom: 16px; }
+  .field:last-child { margin-bottom: 0; }
+
+  /* Weather strip */
+  .weather { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px;
+    background: var(--bg-2); border-radius: 10px; margin-bottom: 16px; }
+  .weather-label { font-size: 11px; color: var(--ink-3); letter-spacing: 0.04em; text-transform: uppercase; }
+  .weather-val { font-size: 14px; color: var(--ink); margin-top: 2px; }
+  .weather-icon { font-size: 24px; }
+
+  /* Save button */
+  .btn-primary {
+    width: 100%; padding: 14px; background: var(--ink); color: var(--bg); border: none;
+    border-radius: 12px; font-size: 15px; font-weight: 500; font-family: var(--sans); cursor: pointer;
+    letter-spacing: 0.02em; transition: opacity 0.15s;
+  }
+  .btn-primary:active { opacity: 0.85; }
+  .btn-secondary {
+    width: 100%; padding: 11px; background: transparent; color: var(--ink-2);
+    border: 1px solid var(--line); border-radius: 10px; font-size: 13px; font-family: var(--sans);
+    cursor: pointer; margin-top: 8px;
+  }
+  .save-msg { text-align: center; font-size: 12px; color: var(--success); margin-top: 10px; min-height: 16px; font-style: italic; font-family: var(--serif); }
+
+  /* Calendar */
+  .cal-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .cal-nav button { width: 36px; height: 36px; padding: 0; background: transparent; border: none; color: var(--ink); font-size: 20px; cursor: pointer; }
+  .cal-hint { font-size: 11px; color: var(--ink-3); text-align: center; margin: 0 0 14px; font-style: italic; font-family: var(--serif); }
+  .cal-dow-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 6px; }
+  .cal-dow { text-align: center; font-size: 10px; color: var(--ink-3); letter-spacing: 0.05em; }
+  .cal-dow.sat { color: var(--info); }
+  .cal-dow.sun { color: var(--accent); }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 16px; }
+  .cell { aspect-ratio: 1; border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; cursor: pointer; border: 1px solid transparent; transition: transform 0.1s; font-weight: 400; }
+  .cell:active { transform: scale(0.92); }
+  .cell.empty { cursor: default; }
+  .cell.today { border-color: var(--ink); border-width: 1.5px; }
+  .cell.selected { outline: 2px solid var(--ink); outline-offset: 2px; }
+  .cell.unfilled { background: var(--bg-2); color: var(--ink-3); }
+
+  .legend { background: var(--bg-2); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
+  .legend-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .legend-label { font-size: 10px; color: var(--ink-3); }
+  .legend-swatches { display: flex; gap: 3px; }
+  .sw { width: 14px; height: 14px; border-radius: 3px; }
+
+  /* Detail card */
+  .detail-meta { font-size: 13px; margin-bottom: 6px; }
+  .detail-meta strong { font-weight: 500; }
+  .detail-row { font-size: 13px; color: var(--ink-2); margin-bottom: 4px; }
+  .detail-row .lbl { color: var(--ink-3); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 2px; }
+
+  /* Stats */
+  .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+  .stat {
+    background: var(--bg-2); border-radius: 12px; padding: 14px 16px;
+  }
+  .stat-label { font-size: 11px; color: var(--ink-3); letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 6px; }
+  .stat-val { font-size: 26px; font-weight: 400; font-family: var(--serif); }
+  .stat-sub { font-size: 11px; color: var(--ink-3); margin-top: 2px; }
+
+  .quad-legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 12px; font-size: 11px; color: var(--ink-2); }
+  .quad-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; vertical-align: 1px; }
+
+  .interpretation { background: var(--bg-2); border-left: 3px solid var(--accent); padding: 12px 14px; margin-bottom: 14px; border-radius: 0 8px 8px 0; }
+  .interpretation-title { font-size: 12px; font-weight: 500; margin-bottom: 4px; letter-spacing: 0.02em; }
+  .interpretation-body { font-size: 12px; color: var(--ink-2); line-height: 1.6; }
+
+  /* Empty state */
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--ink-3); }
+  .empty-state h3 { color: var(--ink-2); margin-bottom: 8px; }
+  .empty-state p { font-size: 13px; }
+
+  canvas { max-width: 100%; height: auto !important; }
+
+  /* Confirmation modal */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+  .modal-backdrop.show { display: flex; }
+  .modal { background: var(--bg); border-radius: 16px; padding: 20px; max-width: 320px; width: 100%; }
+  .modal h3 { margin-bottom: 8px; }
+  .modal p { font-size: 13px; color: var(--ink-2); margin-bottom: 16px; }
+  .modal-actions { display: flex; gap: 8px; }
+  .modal-actions button { flex: 1; }
+
+  .install-hint { background: var(--bg-2); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 12px; color: var(--ink-2); line-height: 1.6; display: none; }
+  .install-hint.show { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="date-line" id="today-line">2026 · 05 · 27 · WED</div>
+  <h1 id="today-greeting">오늘 하루를 짚어볼 시간</h1>
+</div>
+
+<div class="install-hint" id="install-hint">
+  💡 홈화면에 추가하면 앱처럼 쓸 수 있어요. <a href="#" onclick="showInstallGuide(); return false;" style="color: var(--accent);">방법 보기</a>
+</div>
+
+<div class="tabs" role="tablist">
+  <button class="tab active" id="tab-log" onclick="switchTab('log')">기록</button>
+  <button class="tab" id="tab-cal" onclick="switchTab('cal')">캘린더</button>
+  <button class="tab" id="tab-stat" onclick="switchTab('stat')">통계</button>
+</div>
+
+<!-- LOG SCREEN -->
+<div id="screen-log">
+  <div class="card">
+    <p class="card-label">기분</p>
+    <p class="card-hint">긍정 ↔ 부정, 오늘 전반적으로 어땠는지</p>
+    <div class="slider-row">
+      <span class="slider-emoji">😔</span>
+      <input type="range" min="-3" max="3" value="0" step="1" id="valence" oninput="updateLabel('valence-out', this.value, valenceLabel)">
+      <span class="slider-emoji">😊</span>
+    </div>
+    <p class="slider-out" id="valence-out">보통</p>
+  </div>
+
+  <div class="card">
+    <p class="card-label">에너지</p>
+    <p class="card-hint">차분함 ↔ 들뜸, 가라앉아 있었는지 들떠 있었는지</p>
+    <div class="slider-row">
+      <span class="slider-emoji">😴</span>
+      <input type="range" min="-3" max="3" value="0" step="1" id="arousal" oninput="updateLabel('arousal-out', this.value, arousalLabel)">
+      <span class="slider-emoji">⚡</span>
+    </div>
+    <p class="slider-out" id="arousal-out">보통</p>
+  </div>
+
+  <div class="card">
+    <p class="card-label">피크 모먼트</p>
+    <p class="card-hint">가장 강하게 감정이 움직인 한 순간</p>
+    <textarea id="peak" placeholder="예: 점심에 팀장님 피드백 받고 짜증남"></textarea>
+  </div>
+
+  <div class="card">
+    <p class="card-label">🌿 오늘 감사한 일 한 가지</p>
+    <p class="card-hint">아주 작은 것도 좋아요</p>
+    <textarea id="gratitude" placeholder="예: 출근길 햇살이 좋았다"></textarea>
+  </div>
+
+  <div class="card">
+    <p class="card-label">컨텍스트</p>
+
+    <div class="field">
+      <p class="field-label">운동</p>
+      <div class="btn-grid btn-grid-2">
+        <button class="opt" data-group="exercise" data-val="none" onclick="pickOne(this)">안 함</button>
+        <button class="opt" data-group="exercise" data-val="light" onclick="pickOne(this)">가벼움</button>
+        <button class="opt" data-group="exercise" data-val="moderate" onclick="pickOne(this)">중간</button>
+        <button class="opt" data-group="exercise" data-val="heavy" onclick="pickOne(this)">격함</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <p class="field-label">업무 강도</p>
+      <div class="btn-grid btn-grid-5">
+        <button class="opt" data-group="work" data-val="1" onclick="pickOne(this)">1</button>
+        <button class="opt" data-group="work" data-val="2" onclick="pickOne(this)">2</button>
+        <button class="opt" data-group="work" data-val="3" onclick="pickOne(this)">3</button>
+        <button class="opt" data-group="work" data-val="4" onclick="pickOne(this)">4</button>
+        <button class="opt" data-group="work" data-val="5" onclick="pickOne(this)">5</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <p class="field-label">카페인 (잔)</p>
+      <div class="stepper">
+        <button onclick="adjustCaffeine(-1)">−</button>
+        <span class="stepper-val" id="caffeine-val">0</span>
+        <button onclick="adjustCaffeine(1)">+</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <p class="field-label">특이 음식 (선택)</p>
+      <input type="text" id="food" placeholder="예: 매운 음식, 디저트, 술">
+    </div>
+  </div>
+
+  <div class="weather" id="weather-strip">
+    <div>
+      <p class="weather-label">날씨</p>
+      <p class="weather-val" id="weather-text">불러오는 중...</p>
+    </div>
+    <span class="weather-icon" id="weather-icon">⏳</span>
+  </div>
+
+  <button class="btn-primary" onclick="saveEntry()">오늘 기록 저장</button>
+  <p class="save-msg" id="save-msg"></p>
+</div>
+
+<!-- CALENDAR SCREEN -->
+<div id="screen-cal" style="display: none;">
+  <div class="cal-nav">
+    <button onclick="changeMonth(-1)" aria-label="이전 달">‹</button>
+    <h2 id="cal-title">2026년 5월</h2>
+    <button onclick="changeMonth(1)" aria-label="다음 달">›</button>
+  </div>
+  <p class="cal-hint">날짜를 탭하면 그날 기록을 볼 수 있어요</p>
+
+  <div class="cal-dow-row">
+    <div class="cal-dow sun">일</div>
+    <div class="cal-dow">월</div>
+    <div class="cal-dow">화</div>
+    <div class="cal-dow">수</div>
+    <div class="cal-dow">목</div>
+    <div class="cal-dow">금</div>
+    <div class="cal-dow sat">토</div>
+  </div>
+  <div class="cal-grid" id="cal-grid"></div>
+
+  <div class="legend">
+    <div class="legend-row">
+      <span class="legend-label">매우 나쁨</span>
+      <div class="legend-swatches">
+        <div class="sw" style="background: #A2503D;"></div>
+        <div class="sw" style="background: #C97B5C;"></div>
+        <div class="sw" style="background: #E0A88E;"></div>
+        <div class="sw" style="background: #DDD5C0;"></div>
+        <div class="sw" style="background: #B5C996;"></div>
+        <div class="sw" style="background: #7FA968;"></div>
+        <div class="sw" style="background: #4F7A3D;"></div>
+      </div>
+      <span class="legend-label">매우 좋음</span>
+    </div>
+  </div>
+
+  <div class="card" id="day-detail" style="display: none;">
+    <p class="card-label" id="detail-date"></p>
+    <div id="detail-body"></div>
+  </div>
+</div>
+
+<!-- STATS SCREEN -->
+<div id="screen-stat" style="display: none;">
+  <h2 style="margin-bottom: 4px;">최근 30일 분석</h2>
+  <p style="font-size: 12px; color: var(--ink-3); margin-bottom: 16px;" id="stat-range">데이터를 모으면 여기에 나타나요</p>
+
+  <div id="stat-content"></div>
+
+  <button class="btn-secondary" onclick="exportData('csv')">📊 CSV로 내보내기</button>
+  <button class="btn-secondary" onclick="exportData('json')">📦 JSON 백업</button>
+  <button class="btn-secondary" onclick="showImportModal()">📥 백업 복원</button>
+  <input type="file" id="import-file" accept=".json" style="display: none;" onchange="importData(this)">
+</div>
+
+<!-- Reset confirmation modal -->
+<div class="modal-backdrop" id="modal-backdrop" onclick="closeModal(event)">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+// ============ STATE ============
+const valenceLabel = ['매우 나쁨','나쁨','약간 나쁨','보통','약간 좋음','좋음','매우 좋음'];
+const arousalLabel = ['매우 가라앉음','가라앉음','약간 차분','보통','약간 들뜸','들뜸','매우 들뜸'];
+const dayNames = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+const dayNamesKr = ['일','월','화','수','목','금','토'];
+
+let caffeine = 0;
+let selections = { exercise: null, work: null };
+let weatherData = null;
+let calMonth = new Date().getMonth();
+let calYear = new Date().getFullYear();
+let selectedDay = null;
+
+// ============ DATE HELPERS ============
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function dateKey(y, m, d) {
+  return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+function formatDateLine(d) {
+  return `${d.getFullYear()} · ${String(d.getMonth()+1).padStart(2,'0')} · ${String(d.getDate()).padStart(2,'0')} · ${dayNames[d.getDay()]}`;
+}
+
+// ============ INDEXEDDB ============
+const DB_NAME = 'mood-tracker';
+const DB_VERSION = 1;
+const STORE = 'entries';
+let dbInstance = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    if (dbInstance) return resolve(dbInstance);
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onerror = () => reject(req.error);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE)) {
+        db.createObjectStore(STORE, { keyPath: 'date' });
+      }
+    };
+    req.onsuccess = () => { dbInstance = req.result; resolve(dbInstance); };
+  });
+}
+
+async function putEntry(entry) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(entry);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function getEntry(date) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(date);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function getAllEntries() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE, 'readonly').objectStore(STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function clearAllEntries() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).clear();
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// ============ UI INTERACTIONS ============
+function updateLabel(id, val, labels) {
+  document.getElementById(id).textContent = labels[parseInt(val) + 3];
+}
+
+function pickOne(btn) {
+  const group = btn.dataset.group;
+  document.querySelectorAll(`[data-group="${group}"]`).forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  selections[group] = btn.dataset.val;
+}
+
+function adjustCaffeine(delta) {
+  caffeine = Math.max(0, Math.min(10, caffeine + delta));
+  document.getElementById('caffeine-val').textContent = caffeine;
+}
+
+function switchTab(tab) {
+  ['log','cal','stat'].forEach(t => {
+    document.getElementById('screen-' + t).style.display = t === tab ? 'block' : 'none';
+    document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+  });
+  if (tab === 'cal') renderCalendar();
+  if (tab === 'stat') renderStats();
+}
+
+// ============ SAVE / LOAD ============
+async function saveEntry() {
+  const entry = {
+    date: todayKey(),
+    valence: parseInt(document.getElementById('valence').value),
+    arousal: parseInt(document.getElementById('arousal').value),
+    peak: document.getElementById('peak').value.trim(),
+    gratitude: document.getElementById('gratitude').value.trim(),
+    exercise: selections.exercise,
+    work: selections.work ? parseInt(selections.work) : null,
+    caffeine: caffeine,
+    food: document.getElementById('food').value.trim(),
+    weather: weatherData,
+    savedAt: new Date().toISOString()
+  };
+
+  try {
+    await putEntry(entry);
+    const msg = document.getElementById('save-msg');
+    msg.textContent = '✓ 저장됨';
+    setTimeout(() => { msg.textContent = ''; }, 2500);
+  } catch (e) {
+    alert('저장 실패: ' + e.message);
+  }
+}
+
+async function loadTodayEntry() {
+  const entry = await getEntry(todayKey());
+  if (!entry) return;
+  document.getElementById('valence').value = entry.valence;
+  document.getElementById('arousal').value = entry.arousal;
+  updateLabel('valence-out', entry.valence, valenceLabel);
+  updateLabel('arousal-out', entry.arousal, arousalLabel);
+  document.getElementById('peak').value = entry.peak || '';
+  document.getElementById('gratitude').value = entry.gratitude || '';
+  document.getElementById('food').value = entry.food || '';
+  caffeine = entry.caffeine || 0;
+  document.getElementById('caffeine-val').textContent = caffeine;
+  if (entry.exercise) {
+    const b = document.querySelector(`[data-group="exercise"][data-val="${entry.exercise}"]`);
+    if (b) { b.classList.add('on'); selections.exercise = entry.exercise; }
+  }
+  if (entry.work) {
+    const b = document.querySelector(`[data-group="work"][data-val="${entry.work}"]`);
+    if (b) { b.classList.add('on'); selections.work = String(entry.work); }
+  }
+}
+
+// ============ WEATHER ============
+async function loadWeather() {
+  const cacheKey = 'weather-' + todayKey();
+  const cached = localStorage.getItem(cacheKey);
+  if (cached) {
+    weatherData = JSON.parse(cached);
+    showWeather(weatherData);
+    return;
+  }
+
+  try {
+    const pos = await new Promise((resolve, reject) => {
+      if (!navigator.geolocation) return reject('no geo');
+      navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000, maximumAge: 3600000 });
+    });
+    const { latitude, longitude } = pos.coords;
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,weather_code&timezone=auto`;
+    const res = await fetch(url);
+    const data = await res.json();
+    weatherData = {
+      temp: Math.round(data.current.temperature_2m),
+      code: data.current.weather_code,
+      lat: latitude,
+      lon: longitude
+    };
+    localStorage.setItem(cacheKey, JSON.stringify(weatherData));
+    showWeather(weatherData);
+  } catch (e) {
+    document.getElementById('weather-text').textContent = '위치 권한 필요';
+    document.getElementById('weather-icon').textContent = '📍';
+  }
+}
+
+function weatherInterpret(code) {
+  if (code === 0) return { desc: '맑음', icon: '☀️' };
+  if (code <= 3) return { desc: '구름', icon: '⛅' };
+  if (code <= 48) return { desc: '안개', icon: '🌫️' };
+  if (code <= 67) return { desc: '비', icon: '🌧️' };
+  if (code <= 77) return { desc: '눈', icon: '🌨️' };
+  if (code <= 82) return { desc: '소나기', icon: '🌦️' };
+  if (code <= 99) return { desc: '뇌우', icon: '⛈️' };
+  return { desc: '-', icon: '🌡️' };
+}
+
+function showWeather(w) {
+  const interp = weatherInterpret(w.code);
+  document.getElementById('weather-text').textContent = `${interp.desc} · ${w.temp}°C`;
+  document.getElementById('weather-icon').textContent = interp.icon;
+}
+
+// ============ CALENDAR ============
+function valenceToColor(v) {
+  const colors = {
+    '-3': '#A2503D', '-2': '#C97B5C', '-1': '#E0A88E',
+    '0': '#DDD5C0',
+    '1': '#B5C996', '2': '#7FA968', '3': '#4F7A3D'
+  };
+  return colors[String(v)];
+}
+function textColorOnBg(v) {
+  return Math.abs(v) >= 2 ? '#FAF8F3' : '#2D2A24';
+}
+
+async function renderCalendar() {
+  const allEntries = await getAllEntries();
+  const byDate = {};
+  allEntries.forEach(e => { byDate[e.date] = e; });
+
+  const grid = document.getElementById('cal-grid');
+  grid.innerHTML = '';
+  document.getElementById('cal-title').textContent = `${calYear}년 ${calMonth + 1}월`;
+
+  const firstDay = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const todayD = new Date();
+  const isCurrentMonth = todayD.getFullYear() === calYear && todayD.getMonth() === calMonth;
+
+  for (let i = 0; i < firstDay; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell empty';
+    grid.appendChild(cell);
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const cell = document.createElement('div');
+    cell.className = 'cell';
+    if (isCurrentMonth && day === todayD.getDate()) cell.classList.add('today');
+
+    const key = dateKey(calYear, calMonth, day);
+    const entry = byDate[key];
+    if (entry) {
+      cell.style.background = valenceToColor(entry.valence);
+      cell.style.color = textColorOnBg(entry.valence);
+    } else {
+      cell.classList.add('unfilled');
+    }
+    cell.textContent = day;
+    cell.onclick = () => showDayDetail(day, entry);
+    grid.appendChild(cell);
+  }
+}
+
+function showDayDetail(day, entry) {
+  document.querySelectorAll('.cell').forEach(c => c.classList.remove('selected'));
+  const cells = document.querySelectorAll('.cell:not(.empty)');
+  cells[day - 1]?.classList.add('selected');
+
+  const detail = document.getElementById('day-detail');
+  detail.style.display = 'block';
+  const dd = new Date(calYear, calMonth, day);
+  document.getElementById('detail-date').textContent = `${calYear}년 ${calMonth + 1}월 ${day}일 (${dayNamesKr[dd.getDay()]})`;
+  const body = document.getElementById('detail-body');
+
+  if (!entry) {
+    body.innerHTML = '<p style="color: var(--ink-3); font-size: 13px; font-style: italic;">기록 없음</p>';
+    return;
+  }
+  let html = `<p class="detail-meta">기분 <strong>${valenceLabel[entry.valence + 3]}</strong> · 에너지 <strong>${arousalLabel[entry.arousal + 3]}</strong></p>`;
+  if (entry.gratitude) html += `<div class="detail-row"><span class="lbl">감사</span>${escapeHtml(entry.gratitude)}</div>`;
+  if (entry.peak) html += `<div class="detail-row"><span class="lbl">피크</span>${escapeHtml(entry.peak)}</div>`;
+  const ctx = [];
+  if (entry.exercise) ctx.push(`운동: ${ {none:'안 함',light:'가벼움',moderate:'중간',heavy:'격함'}[entry.exercise] }`);
+  if (entry.work) ctx.push(`업무 ${entry.work}`);
+  if (entry.caffeine) ctx.push(`☕ ${entry.caffeine}잔`);
+  if (entry.food) ctx.push(`🍴 ${entry.food}`);
+  if (entry.weather) {
+    const wi = weatherInterpret(entry.weather.code);
+    ctx.push(`${wi.icon} ${entry.weather.temp}°C`);
+  }
+  if (ctx.length) html += `<div class="detail-row"><span class="lbl">컨텍스트</span>${ctx.join(' · ')}</div>`;
+  body.innerHTML = html;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function changeMonth(delta) {
+  calMonth += delta;
+  if (calMonth < 0) { calMonth = 11; calYear--; }
+  if (calMonth > 11) { calMonth = 0; calYear++; }
+  document.getElementById('day-detail').style.display = 'none';
+  renderCalendar();
+}
+
+// ============ STATS ============
+let quadChart;
+
+async function renderStats() {
+  const all = await getAllEntries();
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+  const cutoffKey = dateKey(cutoff.getFullYear(), cutoff.getMonth(), cutoff.getDate());
+  const recent = all.filter(e => e.date >= cutoffKey).sort((a,b) => a.date.localeCompare(b.date));
+
+  const content = document.getElementById('stat-content');
+
+  if (recent.length === 0) {
+    content.innerHTML = `
+      <div class="empty-state">
+        <h3>아직 데이터가 없어요</h3>
+        <p>며칠 기록해보면 여기에<br>변동성과 패턴이 보여요</p>
+      </div>`;
+    document.getElementById('stat-range').textContent = '데이터를 모으면 여기에 나타나요';
+    if (quadChart) { quadChart.destroy(); quadChart = null; }
+    return;
+  }
+
+  document.getElementById('stat-range').textContent = `${recent[0].date} ~ ${recent[recent.length-1].date} · ${recent.length}일 기록`;
+
+  const valences = recent.map(e => e.valence);
+  const arousals = recent.map(e => e.arousal);
+  const vAvg = mean(valences);
+  const vSd = sd(valences);
+  const aAvg = mean(arousals);
+  const aSd = sd(arousals);
+
+  const quadCounts = [0,0,0,0]; // Q1: +,+ | Q2: +,- | Q3: -,+ | Q4: -,-
+  recent.forEach(e => {
+    if (e.valence >= 0 && e.arousal >= 0) quadCounts[0]++;
+    else if (e.valence >= 0 && e.arousal < 0) quadCounts[1]++;
+    else if (e.valence < 0 && e.arousal >= 0) quadCounts[2]++;
+    else quadCounts[3]++;
+  });
+
+  const variabilityLabel = (sdVal) => {
+    if (sdVal < 1.0) return '안정';
+    if (sdVal < 1.5) return '중간';
+    return '큰 편';
+  };
+  const variabilityColor = (sdVal) => {
+    if (sdVal < 1.0) return 'var(--success)';
+    if (sdVal < 1.5) return 'var(--ink-2)';
+    return 'var(--warn)';
+  };
+
+  content.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat">
+        <div class="stat-label">기분 평균</div>
+        <div class="stat-val">${vAvg >= 0 ? '+' : ''}${vAvg.toFixed(1)}</div>
+        <div class="stat-sub">−3 ~ +3 범위</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">기분 표준편차</div>
+        <div class="stat-val" style="color: ${variabilityColor(vSd)}">${vSd.toFixed(2)}</div>
+        <div class="stat-sub">변동성 ${variabilityLabel(vSd)}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">에너지 평균</div>
+        <div class="stat-val">${aAvg >= 0 ? '+' : ''}${aAvg.toFixed(1)}</div>
+        <div class="stat-sub">−3 ~ +3 범위</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">에너지 표준편차</div>
+        <div class="stat-val" style="color: ${variabilityColor(aSd)}">${aSd.toFixed(2)}</div>
+        <div class="stat-sub">변동성 ${variabilityLabel(aSd)}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="card-label">감정 분포</p>
+      <p class="card-hint">점이 흩어져 있을수록 기복이 큼</p>
+      <canvas id="quadChart" width="320" height="320"></canvas>
+      <div class="quad-legend">
+        <div><span class="quad-dot" style="background: #7FA968;"></span>활기 (좋음+들뜸): ${quadCounts[0]}일</div>
+        <div><span class="quad-dot" style="background: #5A7BA8;"></span>평온 (좋음+차분): ${quadCounts[1]}일</div>
+        <div><span class="quad-dot" style="background: #D4A03F;"></span>불안 (나쁨+들뜸): ${quadCounts[2]}일</div>
+        <div><span class="quad-dot" style="background: #9A9384;"></span>우울 (나쁨+차분): ${quadCounts[3]}일</div>
+      </div>
+    </div>
+
+    <div class="interpretation">
+      <div class="interpretation-title">해석 가이드</div>
+      <div class="interpretation-body">
+        표준편차가 <strong>1.5 이상</strong>이면 변동이 큰 편이에요. 4분면에 점이 골고루 흩어져 있으면 진짜 기복이 있는 것이고, 한 영역에 몰려 있으면 안정적이에요. 최소 14일 이상 데이터가 쌓이면 더 신뢰할 수 있어요.
+      </div>
+    </div>
+  `;
+
+  setTimeout(() => drawQuadChart(recent), 50);
+}
+
+function drawQuadChart(entries) {
+  const canvas = document.getElementById('quadChart');
+  if (!canvas) return;
+  if (quadChart) quadChart.destroy();
+
+  const points = entries.map(e => ({ x: e.valence, y: e.arousal }));
+  const colorFor = (p) => {
+    if (p.x >= 0 && p.y >= 0) return '#7FA968';
+    if (p.x >= 0 && p.y < 0) return '#5A7BA8';
+    if (p.x < 0 && p.y >= 0) return '#D4A03F';
+    return '#9A9384';
+  };
+
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const axisColor = isDark ? '#B8AE96' : '#6B6558';
+  const gridColor = isDark ? 'rgba(184,174,150,0.15)' : 'rgba(107,101,88,0.15)';
+  const axisStrong = isDark ? 'rgba(184,174,150,0.4)' : 'rgba(107,101,88,0.4)';
+
+  quadChart = new Chart(canvas, {
+    type: 'scatter',
+    data: {
+      datasets: [{
+        data: points,
+        backgroundColor: points.map(colorFor),
+        borderColor: points.map(colorFor),
+        pointRadius: 6,
+        pointHoverRadius: 9
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: {
+        x: {
+          min: -3.5, max: 3.5,
+          title: { display: true, text: '기분 (부정 ← → 긍정)', font: { size: 11 }, color: axisColor },
+          ticks: { font: { size: 10 }, stepSize: 1, color: axisColor },
+          grid: { color: (c) => c.tick.value === 0 ? axisStrong : gridColor }
+        },
+        y: {
+          min: -3.5, max: 3.5,
+          title: { display: true, text: '에너지 (차분 ← → 들뜸)', font: { size: 11 }, color: axisColor },
+          ticks: { font: { size: 10 }, stepSize: 1, color: axisColor },
+          grid: { color: (c) => c.tick.value === 0 ? axisStrong : gridColor }
+        }
+      }
+    }
+  });
+}
+
+function mean(arr) { return arr.reduce((a,b) => a+b, 0) / arr.length; }
+function sd(arr) {
+  const m = mean(arr);
+  return Math.sqrt(arr.reduce((acc, v) => acc + (v - m) ** 2, 0) / arr.length);
+}
+
+// ============ EXPORT / IMPORT ============
+async function exportData(format) {
+  const all = await getAllEntries();
+  if (all.length === 0) { alert('내보낼 데이터가 없어요'); return; }
+  all.sort((a,b) => a.date.localeCompare(b.date));
+
+  let content, filename, mime;
+  if (format === 'csv') {
+    const headers = ['date','valence','arousal','peak','gratitude','exercise','work','caffeine','food','weather_code','weather_temp'];
+    const rows = [headers.join(',')];
+    all.forEach(e => {
+      const w = e.weather || {};
+      const row = [
+        e.date, e.valence, e.arousal,
+        csvEscape(e.peak), csvEscape(e.gratitude),
+        e.exercise || '', e.work || '', e.caffeine || 0,
+        csvEscape(e.food), w.code || '', w.temp || ''
+      ];
+      rows.push(row.join(','));
+    });
+    content = '\ufeff' + rows.join('\n'); // BOM for Excel
+    filename = `mood-tracker-${todayKey()}.csv`;
+    mime = 'text/csv';
+  } else {
+    content = JSON.stringify({ exportedAt: new Date().toISOString(), entries: all }, null, 2);
+    filename = `mood-tracker-${todayKey()}.json`;
+    mime = 'application/json';
+  }
+
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(s) {
+  if (s == null) return '';
+  s = String(s);
+  if (/[,"\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+  return s;
+}
+
+function showImportModal() {
+  document.getElementById('import-file').click();
+}
+
+async function importData(input) {
+  const file = input.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (!data.entries || !Array.isArray(data.entries)) throw new Error('잘못된 파일 형식');
+
+    showModal(`
+      <h3>백업 복원</h3>
+      <p>${data.entries.length}개의 기록을 가져옵니다. 같은 날짜는 덮어쓰여요. 진행할까요?</p>
+      <div class="modal-actions">
+        <button class="btn-secondary" onclick="closeModal()">취소</button>
+        <button class="btn-primary" onclick="confirmImport()">복원</button>
+      </div>
+    `);
+    window._pendingImport = data.entries;
+  } catch (e) {
+    alert('가져오기 실패: ' + e.message);
+  }
+  input.value = '';
+}
+
+async function confirmImport() {
+  const entries = window._pendingImport;
+  closeModal();
+  for (const e of entries) {
+    await putEntry(e);
+  }
+  alert(`${entries.length}개 복원 완료`);
+  window._pendingImport = null;
+}
+
+function showModal(html) {
+  document.getElementById('modal-content').innerHTML = html;
+  document.getElementById('modal-backdrop').classList.add('show');
+}
+
+function closeModal(event) {
+  if (event && event.target.id !== 'modal-backdrop') return;
+  document.getElementById('modal-backdrop').classList.remove('show');
+}
+
+function showInstallGuide() {
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const html = isIOS ?
+    `<h3>홈화면에 추가 (iOS)</h3>
+     <p>1. 하단 공유 버튼 <strong>⬆️</strong> 탭<br>2. "홈 화면에 추가" 선택<br>3. "추가" 탭</p>
+     <div class="modal-actions"><button class="btn-primary" onclick="closeModal()">확인</button></div>` :
+    `<h3>홈화면에 추가 (Android)</h3>
+     <p>1. 주소창 옆 <strong>⋮</strong> 메뉴<br>2. "홈 화면에 추가" 또는 "앱 설치"<br>3. "추가" 탭</p>
+     <div class="modal-actions"><button class="btn-primary" onclick="closeModal()">확인</button></div>`;
+  showModal(html);
+}
+
+// ============ INIT ============
+function updateGreeting() {
+  const d = new Date();
+  document.getElementById('today-line').textContent = formatDateLine(d);
+  const h = d.getHours();
+  let greeting;
+  if (h < 12) greeting = '오늘 어떻게 시작했나요?';
+  else if (h < 18) greeting = '오늘 어떻게 흘러가나요?';
+  else greeting = '오늘 하루를 짚어볼 시간';
+  document.getElementById('today-greeting').textContent = greeting;
+}
+
+async function init() {
+  updateGreeting();
+  await loadTodayEntry();
+  loadWeather();
+
+  // Show install hint if not standalone
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+  if (!isStandalone && !localStorage.getItem('install-hint-dismissed')) {
+    document.getElementById('install-hint').classList.add('show');
+  }
+
+  // Service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('service-worker.js').catch(e => console.log('SW failed:', e));
+  }
+}
+
+init();
+</script>
+</body>
+</html>
