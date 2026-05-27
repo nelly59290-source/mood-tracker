@@ -224,6 +224,14 @@
 
 <!-- LOG SCREEN -->
 <div id="screen-log">
+  <div id="edit-banner" style="display: none; background: var(--bg-2); border-left: 3px solid var(--accent); border-radius: 0 10px 10px 0; padding: 10px 14px; margin-bottom: 14px; display: none; align-items: center; justify-content: space-between; gap: 10px;">
+    <div>
+      <p style="font-size: 11px; color: var(--ink-3); letter-spacing: 0.05em; text-transform: uppercase; margin: 0;">수정 중</p>
+      <p id="edit-banner-date" style="font-size: 13px; color: var(--ink); margin: 2px 0 0; font-weight: 500;"></p>
+    </div>
+    <button onclick="cancelEdit()" style="background: transparent; border: 1px solid var(--line); color: var(--ink-2); padding: 6px 12px; border-radius: 8px; font-size: 12px; cursor: pointer;">취소</button>
+  </div>
+
   <div class="card">
     <p class="card-label">기분</p>
     <p class="card-hint">긍정 ↔ 부정, 오늘 전반적으로 어땠는지</p>
@@ -348,6 +356,7 @@
   <div class="card" id="day-detail" style="display: none;">
     <p class="card-label" id="detail-date"></p>
     <div id="detail-body"></div>
+    <button id="edit-day-btn" onclick="editSelectedDay()" style="display: none; width: 100%; margin-top: 12px; padding: 10px; background: transparent; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; color: var(--ink-2); cursor: pointer; font-family: var(--sans);">이 날 기록 수정</button>
   </div>
 </div>
 
@@ -383,6 +392,7 @@ let weatherData = null;
 let calMonth = new Date().getMonth();
 let calYear = new Date().getFullYear();
 let selectedDay = null;
+let editingDate = null; // null = 새 기록 (오늘), 'YYYY-MM-DD' = 수정 중인 날짜
 
 // ============ DATE HELPERS ============
 function todayKey() {
@@ -483,8 +493,23 @@ function switchTab(tab) {
 
 // ============ SAVE / LOAD ============
 async function saveEntry() {
+  // 수정 중이면 그 날짜로, 아니면 오늘 날짜로
+  const targetDate = editingDate || todayKey();
+
+  // 기존 기록이 있는지 확인 (오늘 기록 덮어쓰기 경고)
+  if (!editingDate) {
+    const existing = await getEntry(targetDate);
+    if (existing) {
+      const ok = await confirmDialog(
+        '오늘 이미 기록이 있어요',
+        '오늘은 이미 저장된 기록이 있어요. 캘린더에서 그 기록을 수정하는 게 좋아요. 그래도 덮어쓸까요?'
+      );
+      if (!ok) return;
+    }
+  }
+
   const entry = {
-    date: todayKey(),
+    date: targetDate,
     valence: parseInt(document.getElementById('valence').value),
     arousal: parseInt(document.getElementById('arousal').value),
     peak: document.getElementById('peak').value.trim(),
@@ -499,17 +524,38 @@ async function saveEntry() {
 
   try {
     await putEntry(entry);
+    const wasEditing = !!editingDate;
+    resetForm();
     const msg = document.getElementById('save-msg');
-    msg.textContent = '✓ 저장됨';
+    msg.textContent = wasEditing ? '✓ 수정 완료' : '✓ 저장됨';
     setTimeout(() => { msg.textContent = ''; }, 2500);
+    // 수정 모드였으면 캘린더 탭으로 자동 이동
+    if (wasEditing) {
+      setTimeout(() => switchTab('cal'), 600);
+    }
   } catch (e) {
     alert('저장 실패: ' + e.message);
   }
 }
 
-async function loadTodayEntry() {
-  const entry = await getEntry(todayKey());
-  if (!entry) return;
+function resetForm() {
+  document.getElementById('valence').value = 0;
+  document.getElementById('arousal').value = 0;
+  updateLabel('valence-out', 0, valenceLabel);
+  updateLabel('arousal-out', 0, arousalLabel);
+  document.getElementById('peak').value = '';
+  document.getElementById('gratitude').value = '';
+  document.getElementById('food').value = '';
+  caffeine = 0;
+  document.getElementById('caffeine-val').textContent = 0;
+  document.querySelectorAll('.opt.on').forEach(b => b.classList.remove('on'));
+  selections = { exercise: null, work: null };
+  editingDate = null;
+  document.getElementById('edit-banner').style.display = 'none';
+  window.scrollTo(0, 0);
+}
+
+function loadEntryIntoForm(entry) {
   document.getElementById('valence').value = entry.valence;
   document.getElementById('arousal').value = entry.arousal;
   updateLabel('valence-out', entry.valence, valenceLabel);
@@ -519,6 +565,8 @@ async function loadTodayEntry() {
   document.getElementById('food').value = entry.food || '';
   caffeine = entry.caffeine || 0;
   document.getElementById('caffeine-val').textContent = caffeine;
+  document.querySelectorAll('.opt.on').forEach(b => b.classList.remove('on'));
+  selections = { exercise: null, work: null };
   if (entry.exercise) {
     const b = document.querySelector(`[data-group="exercise"][data-val="${entry.exercise}"]`);
     if (b) { b.classList.add('on'); selections.exercise = entry.exercise; }
@@ -527,6 +575,44 @@ async function loadTodayEntry() {
     const b = document.querySelector(`[data-group="work"][data-val="${entry.work}"]`);
     if (b) { b.classList.add('on'); selections.work = String(entry.work); }
   }
+}
+
+async function editSelectedDay() {
+  if (!selectedDay) return;
+  const key = dateKey(calYear, calMonth, selectedDay);
+  const entry = await getEntry(key);
+  if (!entry) return;
+
+  editingDate = key;
+  loadEntryIntoForm(entry);
+
+  // 수정 배너 표시
+  const banner = document.getElementById('edit-banner');
+  banner.style.display = 'flex';
+  const d = new Date(calYear, calMonth, selectedDay);
+  document.getElementById('edit-banner-date').textContent =
+    `${calYear}년 ${calMonth + 1}월 ${selectedDay}일 (${dayNamesKr[d.getDay()]}) 기록`;
+
+  switchTab('log');
+}
+
+function cancelEdit() {
+  resetForm();
+}
+
+function confirmDialog(title, message) {
+  return new Promise((resolve) => {
+    showModal(`
+      <h3>${escapeHtml(title)}</h3>
+      <p>${escapeHtml(message)}</p>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="confirm-no">취소</button>
+        <button class="btn-primary" id="confirm-yes">계속</button>
+      </div>
+    `);
+    document.getElementById('confirm-yes').onclick = () => { closeModal(); resolve(true); };
+    document.getElementById('confirm-no').onclick = () => { closeModal(); resolve(false); };
+  });
 }
 
 // ============ WEATHER ============
@@ -632,6 +718,7 @@ async function renderCalendar() {
 }
 
 function showDayDetail(day, entry) {
+  selectedDay = day;
   document.querySelectorAll('.cell').forEach(c => c.classList.remove('selected'));
   const cells = document.querySelectorAll('.cell:not(.empty)');
   cells[day - 1]?.classList.add('selected');
@@ -641,9 +728,11 @@ function showDayDetail(day, entry) {
   const dd = new Date(calYear, calMonth, day);
   document.getElementById('detail-date').textContent = `${calYear}년 ${calMonth + 1}월 ${day}일 (${dayNamesKr[dd.getDay()]})`;
   const body = document.getElementById('detail-body');
+  const editBtn = document.getElementById('edit-day-btn');
 
   if (!entry) {
     body.innerHTML = '<p style="color: var(--ink-3); font-size: 13px; font-style: italic;">기록 없음</p>';
+    editBtn.style.display = 'none';
     return;
   }
   let html = `<p class="detail-meta">기분 <strong>${valenceLabel[entry.valence + 3]}</strong> · 에너지 <strong>${arousalLabel[entry.arousal + 3]}</strong></p>`;
@@ -660,6 +749,7 @@ function showDayDetail(day, entry) {
   }
   if (ctx.length) html += `<div class="detail-row"><span class="lbl">컨텍스트</span>${ctx.join(' · ')}</div>`;
   body.innerHTML = html;
+  editBtn.style.display = 'block';
 }
 
 function escapeHtml(s) {
@@ -670,6 +760,7 @@ function changeMonth(delta) {
   calMonth += delta;
   if (calMonth < 0) { calMonth = 11; calYear--; }
   if (calMonth > 11) { calMonth = 0; calYear++; }
+  selectedDay = null;
   document.getElementById('day-detail').style.display = 'none';
   renderCalendar();
 }
@@ -947,7 +1038,6 @@ function updateGreeting() {
 
 async function init() {
   updateGreeting();
-  await loadTodayEntry();
   loadWeather();
 
   // Show install hint if not standalone
