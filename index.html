@@ -203,6 +203,29 @@
 
   .install-hint { background: var(--bg-2); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 12px; color: var(--ink-2); line-height: 1.6; display: none; }
   .install-hint.show { display: block; }
+
+  /* Streak + sparkline strip */
+  .top-strip { display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: var(--bg-2); border-radius: 10px; margin-bottom: 14px; }
+  .streak { display: flex; align-items: baseline; gap: 4px; }
+  .streak-num { font-family: var(--serif); font-size: 22px; font-weight: 500; color: var(--ink); }
+  .streak-lbl { font-size: 11px; color: var(--ink-3); letter-spacing: 0.04em; }
+  .spark { flex: 1; display: flex; align-items: center; gap: 2px; height: 28px; justify-content: flex-end; }
+  .spark-cell { width: 6px; height: 100%; background: var(--bg-3); border-radius: 2px; position: relative; }
+  .spark-bar { position: absolute; left: 0; right: 0; border-radius: 2px; }
+
+  /* Tag chips (multi-select) */
+  .tag-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tag {
+    padding: 7px 12px; background: var(--bg-2); border: 1px solid transparent;
+    border-radius: 999px; font-size: 13px; font-family: var(--sans); color: var(--ink-2);
+    cursor: pointer; transition: all 0.15s;
+  }
+  .tag:active { transform: scale(0.97); }
+  .tag.on { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 500; }
+
+  /* Sleep card */
+  .sleep-row { display: flex; align-items: center; gap: 14px; }
+  .sleep-q-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -232,6 +255,37 @@
     <button onclick="cancelEdit()" style="background: transparent; border: 1px solid var(--line); color: var(--ink-2); padding: 6px 12px; border-radius: 8px; font-size: 12px; cursor: pointer;">취소</button>
   </div>
 
+  <div class="top-strip" id="top-strip">
+    <div class="streak">
+      <span class="streak-num" id="streak-num">0</span>
+      <span class="streak-lbl">일 연속</span>
+    </div>
+    <div class="spark" id="spark" aria-label="최근 14일 기분"></div>
+  </div>
+
+  <div class="card">
+    <p class="card-label">🌗 어젯밤 잘 잤어요?</p>
+    <p class="card-hint">수면이 다음날 기분에 가장 크게 영향을 줘요</p>
+    <div class="field">
+      <p class="field-label">수면 시간</p>
+      <div class="stepper">
+        <button onclick="adjustSleep(-0.5)">−</button>
+        <span class="stepper-val" id="sleep-h-val">—</span>
+        <button onclick="adjustSleep(0.5)">+</button>
+      </div>
+    </div>
+    <div class="field" style="margin-bottom: 0;">
+      <p class="field-label">수면 질</p>
+      <div class="sleep-q-grid">
+        <button class="opt" data-group="sleepQuality" data-val="1" onclick="pickOne(this)">😵</button>
+        <button class="opt" data-group="sleepQuality" data-val="2" onclick="pickOne(this)">😪</button>
+        <button class="opt" data-group="sleepQuality" data-val="3" onclick="pickOne(this)">😐</button>
+        <button class="opt" data-group="sleepQuality" data-val="4" onclick="pickOne(this)">🙂</button>
+        <button class="opt" data-group="sleepQuality" data-val="5" onclick="pickOne(this)">😌</button>
+      </div>
+    </div>
+  </div>
+
   <div class="card">
     <p class="card-label">기분</p>
     <p class="card-hint">긍정 ↔ 부정, 오늘 전반적으로 어땠는지</p>
@@ -252,6 +306,23 @@
       <span class="slider-emoji">⚡</span>
     </div>
     <p class="slider-out" id="arousal-out">보통</p>
+  </div>
+
+  <div class="card">
+    <p class="card-label">🏷️ 감정 태그</p>
+    <p class="card-hint">오늘 느낀 감정 (여러 개 선택 가능)</p>
+    <div class="tag-grid">
+      <button class="tag" data-tag="짜증" onclick="toggleTag(this)">짜증</button>
+      <button class="tag" data-tag="불안" onclick="toggleTag(this)">불안</button>
+      <button class="tag" data-tag="우울" onclick="toggleTag(this)">우울</button>
+      <button class="tag" data-tag="외로움" onclick="toggleTag(this)">외로움</button>
+      <button class="tag" data-tag="지침" onclick="toggleTag(this)">지침</button>
+      <button class="tag" data-tag="분노" onclick="toggleTag(this)">분노</button>
+      <button class="tag" data-tag="평온" onclick="toggleTag(this)">평온</button>
+      <button class="tag" data-tag="기쁨" onclick="toggleTag(this)">기쁨</button>
+      <button class="tag" data-tag="뿌듯" onclick="toggleTag(this)">뿌듯</button>
+      <button class="tag" data-tag="설렘" onclick="toggleTag(this)">설렘</button>
+    </div>
   </div>
 
   <div class="card">
@@ -280,6 +351,29 @@
     </div>
 
     <div class="field">
+      <p class="field-label">자기 시간 (여러 개)</p>
+      <div class="tag-grid">
+        <button class="tag" data-multi="selfCare" data-val="요가" onclick="toggleMulti(this)">요가</button>
+        <button class="tag" data-multi="selfCare" data-val="명상" onclick="toggleMulti(this)">명상</button>
+        <button class="tag" data-multi="selfCare" data-val="독서" onclick="toggleMulti(this)">독서</button>
+        <button class="tag" data-multi="selfCare" data-val="산책" onclick="toggleMulti(this)">산책</button>
+        <button class="tag" data-multi="selfCare" data-val="음악" onclick="toggleMulti(this)">음악</button>
+        <button class="tag" data-multi="selfCare" data-val="영화" onclick="toggleMulti(this)">영화/드라마</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <p class="field-label">사회적 접촉 (여러 개)</p>
+      <div class="tag-grid">
+        <button class="tag" data-multi="social" data-val="혼자" onclick="toggleMulti(this)">혼자</button>
+        <button class="tag" data-multi="social" data-val="가족" onclick="toggleMulti(this)">가족</button>
+        <button class="tag" data-multi="social" data-val="남자친구" onclick="toggleMulti(this)">남자친구</button>
+        <button class="tag" data-multi="social" data-val="친구" onclick="toggleMulti(this)">친구</button>
+        <button class="tag" data-multi="social" data-val="동료" onclick="toggleMulti(this)">동료</button>
+      </div>
+    </div>
+
+    <div class="field">
       <p class="field-label">업무 강도</p>
       <div class="btn-grid btn-grid-5">
         <button class="opt" data-group="work" data-val="1" onclick="pickOne(this)">1</button>
@@ -287,6 +381,16 @@
         <button class="opt" data-group="work" data-val="3" onclick="pickOne(this)">3</button>
         <button class="opt" data-group="work" data-val="4" onclick="pickOne(this)">4</button>
         <button class="opt" data-group="work" data-val="5" onclick="pickOne(this)">5</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <p class="field-label">생리 주기</p>
+      <div class="btn-grid btn-grid-2" style="grid-template-columns: repeat(4, 1fr);">
+        <button class="opt" data-group="period" data-val="none" onclick="pickOne(this)">평소</button>
+        <button class="opt" data-group="period" data-val="pms" onclick="pickOne(this)">PMS</button>
+        <button class="opt" data-group="period" data-val="on" onclick="pickOne(this)">생리중</button>
+        <button class="opt" data-group="period" data-val="ovulation" onclick="pickOne(this)">배란</button>
       </div>
     </div>
 
@@ -300,8 +404,17 @@
     </div>
 
     <div class="field">
+      <p class="field-label">음주 (잔)</p>
+      <div class="stepper">
+        <button onclick="adjustAlcohol(-1)">−</button>
+        <span class="stepper-val" id="alcohol-val">0</span>
+        <button onclick="adjustAlcohol(1)">+</button>
+      </div>
+    </div>
+
+    <div class="field">
       <p class="field-label">특이 음식 (선택)</p>
-      <input type="text" id="food" placeholder="예: 매운 음식, 디저트, 술">
+      <input type="text" id="food" placeholder="예: 매운 음식, 디저트">
     </div>
   </div>
 
@@ -387,7 +500,10 @@ const dayNames = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 const dayNamesKr = ['일','월','화','수','목','금','토'];
 
 let caffeine = 0;
-let selections = { exercise: null, work: null };
+let alcohol = 0;
+let sleepHours = null; // hours, in 0.5 step. null = unset
+let selections = { exercise: null, work: null, sleepQuality: null, period: null };
+let multiSel = { tags: [], selfCare: [], social: [] };
 let weatherData = null;
 let calMonth = new Date().getMonth();
 let calYear = new Date().getFullYear();
@@ -482,19 +598,81 @@ function adjustCaffeine(delta) {
   document.getElementById('caffeine-val').textContent = caffeine;
 }
 
+function adjustAlcohol(delta) {
+  alcohol = Math.max(0, Math.min(15, alcohol + delta));
+  document.getElementById('alcohol-val').textContent = alcohol;
+}
+
+function adjustSleep(delta) {
+  if (sleepHours === null) sleepHours = 7; // 첫 클릭 시 기본값
+  sleepHours = Math.max(0, Math.min(14, sleepHours + delta));
+  document.getElementById('sleep-h-val').textContent = sleepHours.toFixed(1).replace(/\.0$/,'');
+}
+
+function toggleTag(btn) {
+  const tag = btn.dataset.tag;
+  const i = multiSel.tags.indexOf(tag);
+  if (i >= 0) { multiSel.tags.splice(i, 1); btn.classList.remove('on'); }
+  else { multiSel.tags.push(tag); btn.classList.add('on'); }
+}
+
+function toggleMulti(btn) {
+  const group = btn.dataset.multi; // 'selfCare' | 'social'
+  const val = btn.dataset.val;
+  const arr = multiSel[group];
+  const i = arr.indexOf(val);
+  if (i >= 0) { arr.splice(i, 1); btn.classList.remove('on'); }
+  else { arr.push(val); btn.classList.add('on'); }
+}
+
 function switchTab(tab) {
   ['log','cal','stat'].forEach(t => {
     document.getElementById('screen-' + t).style.display = t === tab ? 'block' : 'none';
     document.getElementById('tab-' + t).classList.toggle('active', t === tab);
   });
+  if (tab === 'log') renderStreakAndSparkline();
   if (tab === 'cal') renderCalendar();
   if (tab === 'stat') renderStats();
+}
+
+async function renderStreakAndSparkline() {
+  const all = await getAllEntries();
+  const byDate = {};
+  all.forEach(e => { byDate[e.date] = e; });
+
+  // Streak: 오늘 기록 있으면 오늘부터, 없으면 어제부터 거꾸로 카운트
+  let streak = 0;
+  const d = new Date();
+  if (!byDate[todayKey()]) d.setDate(d.getDate() - 1);
+  while (true) {
+    const k = dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+    if (byDate[k]) { streak++; d.setDate(d.getDate() - 1); }
+    else break;
+  }
+  document.getElementById('streak-num').textContent = streak;
+
+  // Sparkline: 최근 14일
+  const spark = document.getElementById('spark');
+  spark.innerHTML = '';
+  const today = new Date();
+  for (let i = 13; i >= 0; i--) {
+    const dd = new Date(today);
+    dd.setDate(dd.getDate() - i);
+    const k = dateKey(dd.getFullYear(), dd.getMonth(), dd.getDate());
+    const e = byDate[k];
+    const cell = document.createElement('div');
+    cell.className = 'spark-cell';
+    cell.title = k + (e ? ` · 기분 ${e.valence}` : ' · 기록 없음');
+    if (e) cell.style.background = valenceToColor(e.valence);
+    spark.appendChild(cell);
+  }
 }
 
 // ============ SAVE / LOAD ============
 async function saveEntry() {
   // 수정 중이면 그 날짜로, 아니면 오늘 날짜로
   const targetDate = editingDate || todayKey();
+  const isToday = targetDate === todayKey();
 
   // 기존 기록이 있는지 확인 (오늘 기록 덮어쓰기 경고)
   if (!editingDate) {
@@ -508,17 +686,33 @@ async function saveEntry() {
     }
   }
 
+  // 지난 날은 오늘 날씨를 저장하면 안 됨. 기존 기록 수정 시엔 원래 날씨 보존
+  let weatherForEntry = null;
+  if (isToday) {
+    weatherForEntry = weatherData;
+  } else {
+    const existingEntry = await getEntry(targetDate);
+    weatherForEntry = existingEntry?.weather || null;
+  }
+
   const entry = {
     date: targetDate,
     valence: parseInt(document.getElementById('valence').value),
     arousal: parseInt(document.getElementById('arousal').value),
     peak: document.getElementById('peak').value.trim(),
     gratitude: document.getElementById('gratitude').value.trim(),
+    tags: [...multiSel.tags],
+    sleepHours: sleepHours,
+    sleepQuality: selections.sleepQuality ? parseInt(selections.sleepQuality) : null,
     exercise: selections.exercise,
+    selfCare: [...multiSel.selfCare],
+    social: [...multiSel.social],
     work: selections.work ? parseInt(selections.work) : null,
+    period: selections.period,
     caffeine: caffeine,
+    alcohol: alcohol,
     food: document.getElementById('food').value.trim(),
-    weather: weatherData,
+    weather: weatherForEntry,
     savedAt: new Date().toISOString()
   };
 
@@ -529,6 +723,7 @@ async function saveEntry() {
     const cameFromCalendar = !!editingDate;
     const isNewEntry = !existingBefore;
     resetForm();
+    renderStreakAndSparkline();
     const msg = document.getElementById('save-msg');
     msg.textContent = isNewEntry ? '✓ 기록 추가됨' : '✓ 수정 완료';
     setTimeout(() => { msg.textContent = ''; }, 2500);
@@ -542,6 +737,19 @@ async function saveEntry() {
 }
 
 function resetForm() {
+  clearFormFields();
+  editingDate = null;
+  document.getElementById('edit-banner').style.display = 'none';
+  // 오늘 날씨 표시 복원
+  if (weatherData) showWeather(weatherData);
+  else {
+    document.getElementById('weather-text').textContent = '불러오는 중...';
+    document.getElementById('weather-icon').textContent = '⏳';
+  }
+  window.scrollTo(0, 0);
+}
+
+function clearFormFields() {
   document.getElementById('valence').value = 0;
   document.getElementById('arousal').value = 0;
   updateLabel('valence-out', 0, valenceLabel);
@@ -551,14 +759,18 @@ function resetForm() {
   document.getElementById('food').value = '';
   caffeine = 0;
   document.getElementById('caffeine-val').textContent = 0;
+  alcohol = 0;
+  document.getElementById('alcohol-val').textContent = 0;
+  sleepHours = null;
+  document.getElementById('sleep-h-val').textContent = '—';
   document.querySelectorAll('.opt.on').forEach(b => b.classList.remove('on'));
-  selections = { exercise: null, work: null };
-  editingDate = null;
-  document.getElementById('edit-banner').style.display = 'none';
-  window.scrollTo(0, 0);
+  document.querySelectorAll('.tag.on').forEach(b => b.classList.remove('on'));
+  selections = { exercise: null, work: null, sleepQuality: null, period: null };
+  multiSel = { tags: [], selfCare: [], social: [] };
 }
 
 function loadEntryIntoForm(entry) {
+  clearFormFields();
   document.getElementById('valence').value = entry.valence;
   document.getElementById('arousal').value = entry.arousal;
   updateLabel('valence-out', entry.valence, valenceLabel);
@@ -568,22 +780,44 @@ function loadEntryIntoForm(entry) {
   document.getElementById('food').value = entry.food || '';
   caffeine = entry.caffeine || 0;
   document.getElementById('caffeine-val').textContent = caffeine;
-  document.querySelectorAll('.opt.on').forEach(b => b.classList.remove('on'));
-  selections = { exercise: null, work: null };
-  if (entry.exercise) {
-    const b = document.querySelector(`[data-group="exercise"][data-val="${entry.exercise}"]`);
-    if (b) { b.classList.add('on'); selections.exercise = entry.exercise; }
+  alcohol = entry.alcohol || 0;
+  document.getElementById('alcohol-val').textContent = alcohol;
+  if (entry.sleepHours != null) {
+    sleepHours = entry.sleepHours;
+    document.getElementById('sleep-h-val').textContent = sleepHours.toFixed(1).replace(/\.0$/,'');
   }
-  if (entry.work) {
-    const b = document.querySelector(`[data-group="work"][data-val="${entry.work}"]`);
-    if (b) { b.classList.add('on'); selections.work = String(entry.work); }
-  }
+  // single-select groups
+  const singles = [
+    ['exercise', entry.exercise],
+    ['work', entry.work ? String(entry.work) : null],
+    ['sleepQuality', entry.sleepQuality ? String(entry.sleepQuality) : null],
+    ['period', entry.period],
+  ];
+  singles.forEach(([group, val]) => {
+    if (!val) return;
+    const b = document.querySelector(`[data-group="${group}"][data-val="${val}"]`);
+    if (b) { b.classList.add('on'); selections[group] = val; }
+  });
+  // multi-select
+  (entry.tags || []).forEach(t => {
+    const b = document.querySelector(`.tag[data-tag="${t}"]`);
+    if (b) { b.classList.add('on'); multiSel.tags.push(t); }
+  });
+  (entry.selfCare || []).forEach(v => {
+    const b = document.querySelector(`.tag[data-multi="selfCare"][data-val="${v}"]`);
+    if (b) { b.classList.add('on'); multiSel.selfCare.push(v); }
+  });
+  (entry.social || []).forEach(v => {
+    const b = document.querySelector(`.tag[data-multi="social"][data-val="${v}"]`);
+    if (b) { b.classList.add('on'); multiSel.social.push(v); }
+  });
 }
 
 async function editSelectedDay() {
   if (!selectedDay) return;
   const key = dateKey(calYear, calMonth, selectedDay);
   const entry = await getEntry(key);
+  const isToday = key === todayKey();
 
   editingDate = key;
 
@@ -594,17 +828,36 @@ async function editSelectedDay() {
     resetFormFieldsOnly();
   }
 
+  // 날씨 스트립 업데이트: 지난 날은 자동 입력 비활성화
+  updateWeatherStripForEditing(entry, isToday);
+
   // 수정/추가 배너 표시
   const banner = document.getElementById('edit-banner');
   banner.style.display = 'flex';
   const d = new Date(calYear, calMonth, selectedDay);
-  const isToday = key === todayKey();
   const label = entry ? '수정 중' : (isToday ? '기록 중' : '지난 날 기록 중');
   document.getElementById('edit-banner-label').textContent = label;
   document.getElementById('edit-banner-date').textContent =
     `${calYear}년 ${calMonth + 1}월 ${selectedDay}일 (${dayNamesKr[d.getDay()]})`;
 
   switchTab('log');
+}
+
+function updateWeatherStripForEditing(entry, isToday) {
+  const textEl = document.getElementById('weather-text');
+  const iconEl = document.getElementById('weather-icon');
+  if (isToday) {
+    if (weatherData) showWeather(weatherData);
+    else { textEl.textContent = '불러오는 중...'; iconEl.textContent = '⏳'; }
+    return;
+  }
+  // 지난 날: 기존 날씨가 있으면 그걸 보여주고, 없으면 빈칸 안내
+  if (entry?.weather) {
+    showWeather(entry.weather);
+  } else {
+    textEl.textContent = '지난 날 — 자동 입력 안 됨';
+    iconEl.textContent = '—';
+  }
 }
 
 // editingDate는 유지하면서 폼 필드만 비우기
@@ -773,12 +1026,26 @@ function showDayDetail(day, entry) {
     return;
   }
   let html = `<p class="detail-meta">기분 <strong>${valenceLabel[entry.valence + 3]}</strong> · 에너지 <strong>${arousalLabel[entry.arousal + 3]}</strong></p>`;
+  if (entry.tags?.length) html += `<div class="detail-row"><span class="lbl">감정 태그</span>${entry.tags.map(escapeHtml).join(' · ')}</div>`;
   if (entry.gratitude) html += `<div class="detail-row"><span class="lbl">감사</span>${escapeHtml(entry.gratitude)}</div>`;
   if (entry.peak) html += `<div class="detail-row"><span class="lbl">피크</span>${escapeHtml(entry.peak)}</div>`;
+  if (entry.sleepHours != null || entry.sleepQuality) {
+    const sleepBits = [];
+    if (entry.sleepHours != null) sleepBits.push(`${entry.sleepHours}시간`);
+    if (entry.sleepQuality) sleepBits.push(`질 ${entry.sleepQuality}/5`);
+    html += `<div class="detail-row"><span class="lbl">수면</span>${sleepBits.join(' · ')}</div>`;
+  }
   const ctx = [];
-  if (entry.exercise) ctx.push(`운동: ${ {none:'안 함',light:'가벼움',moderate:'중간',heavy:'격함'}[entry.exercise] }`);
+  if (entry.exercise) ctx.push(`운동 ${ {none:'안 함',light:'가벼움',moderate:'중간',heavy:'격함'}[entry.exercise] }`);
+  if (entry.selfCare?.length) ctx.push(`자기시간: ${entry.selfCare.join(',')}`);
+  if (entry.social?.length) ctx.push(`사람: ${entry.social.join(',')}`);
   if (entry.work) ctx.push(`업무 ${entry.work}`);
+  if (entry.period && entry.period !== 'none') {
+    const periodMap = { pms: 'PMS', on: '생리중', ovulation: '배란' };
+    ctx.push(periodMap[entry.period] || entry.period);
+  }
   if (entry.caffeine) ctx.push(`☕ ${entry.caffeine}잔`);
+  if (entry.alcohol) ctx.push(`🍷 ${entry.alcohol}잔`);
   if (entry.food) ctx.push(`🍴 ${entry.food}`);
   if (entry.weather) {
     const wi = weatherInterpret(entry.weather.code);
@@ -896,9 +1163,95 @@ async function renderStats() {
         표준편차가 <strong>1.5 이상</strong>이면 변동이 큰 편이에요. 4분면에 점이 골고루 흩어져 있으면 진짜 기복이 있는 것이고, 한 영역에 몰려 있으면 안정적이에요. 최소 14일 이상 데이터가 쌓이면 더 신뢰할 수 있어요.
       </div>
     </div>
+
+    ${renderInsightCards(recent)}
   `;
 
   setTimeout(() => drawQuadChart(recent), 50);
+}
+
+function renderInsightCards(recent) {
+  let html = '';
+
+  // 수면 인사이트
+  const slept = recent.filter(e => e.sleepHours != null);
+  if (slept.length >= 3) {
+    const avgSleep = mean(slept.map(e => e.sleepHours));
+    const lowSleep = slept.filter(e => e.sleepHours < 7);
+    const goodSleep = slept.filter(e => e.sleepHours >= 7);
+    let impact = '';
+    if (lowSleep.length >= 2 && goodSleep.length >= 2) {
+      const lowMood = mean(lowSleep.map(e => e.valence));
+      const goodMood = mean(goodSleep.map(e => e.valence));
+      const diff = goodMood - lowMood;
+      const arrow = diff > 0 ? '↑' : (diff < 0 ? '↓' : '·');
+      impact = `<div class="stat-sub">7시간 이상 잔 날 기분 ${arrow} ${Math.abs(diff).toFixed(1)}점</div>`;
+    }
+    html += `
+      <div class="card">
+        <p class="card-label">💤 수면</p>
+        <p class="card-hint">최근 ${slept.length}일 기준</p>
+        <div class="stats-grid">
+          <div class="stat">
+            <div class="stat-label">평균 수면</div>
+            <div class="stat-val">${avgSleep.toFixed(1)}<span style="font-size:14px; color:var(--ink-3);">h</span></div>
+            ${impact}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // 감정 태그 인사이트
+  const tagCounts = {};
+  recent.forEach(e => (e.tags || []).forEach(t => { tagCounts[t] = (tagCounts[t] || 0) + 1; }));
+  const topTags = Object.entries(tagCounts).sort((a,b) => b[1] - a[1]).slice(0, 5);
+  if (topTags.length) {
+    const tagHtml = topTags.map(([t, n]) => `<span class="tag on" style="cursor:default;">${escapeHtml(t)} · ${n}</span>`).join(' ');
+    html += `
+      <div class="card">
+        <p class="card-label">🏷️ 자주 등장한 감정</p>
+        <p class="card-hint">최근 ${recent.length}일</p>
+        <div class="tag-grid">${tagHtml}</div>
+      </div>`;
+  }
+
+  // 생리 주기 인사이트
+  const byPhase = { pms: [], on: [], none: [], ovulation: [] };
+  recent.forEach(e => {
+    if (e.period && byPhase[e.period]) byPhase[e.period].push(e.valence);
+  });
+  const phaseLabels = { pms: 'PMS', on: '생리중', ovulation: '배란', none: '평소' };
+  const phaseRows = Object.entries(byPhase)
+    .filter(([_, arr]) => arr.length >= 2)
+    .map(([p, arr]) => `<div class="detail-row"><span class="lbl">${phaseLabels[p]} (${arr.length}일)</span>평균 기분 ${mean(arr) >= 0 ? '+' : ''}${mean(arr).toFixed(1)}</div>`);
+  if (phaseRows.length >= 2) {
+    html += `
+      <div class="card">
+        <p class="card-label">🌙 생리 주기와 기분</p>
+        <p class="card-hint">2일 이상 기록된 단계만 표시</p>
+        ${phaseRows.join('')}
+      </div>`;
+  }
+
+  // 음주 인사이트
+  const drinkDays = recent.filter(e => (e.alcohol || 0) > 0);
+  if (drinkDays.length >= 2) {
+    const avgDrink = mean(drinkDays.map(e => e.alcohol));
+    html += `
+      <div class="card">
+        <p class="card-label">🍷 음주</p>
+        <p class="card-hint">마신 날 평균</p>
+        <div class="stats-grid">
+          <div class="stat">
+            <div class="stat-label">마신 날 / 전체</div>
+            <div class="stat-val">${drinkDays.length}<span style="font-size:14px; color:var(--ink-3);">/${recent.length}</span></div>
+            <div class="stat-sub">평균 ${avgDrink.toFixed(1)}잔</div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  return html;
 }
 
 function drawQuadChart(entries) {
@@ -966,14 +1319,21 @@ async function exportData(format) {
 
   let content, filename, mime;
   if (format === 'csv') {
-    const headers = ['date','valence','arousal','peak','gratitude','exercise','work','caffeine','food','weather_code','weather_temp'];
+    const headers = ['date','valence','arousal','tags','sleep_hours','sleep_quality','peak','gratitude','exercise','self_care','social','work','period','caffeine','alcohol','food','weather_code','weather_temp'];
     const rows = [headers.join(',')];
     all.forEach(e => {
       const w = e.weather || {};
       const row = [
         e.date, e.valence, e.arousal,
+        csvEscape((e.tags || []).join('|')),
+        e.sleepHours != null ? e.sleepHours : '',
+        e.sleepQuality || '',
         csvEscape(e.peak), csvEscape(e.gratitude),
-        e.exercise || '', e.work || '', e.caffeine || 0,
+        e.exercise || '',
+        csvEscape((e.selfCare || []).join('|')),
+        csvEscape((e.social || []).join('|')),
+        e.work || '', e.period || '',
+        e.caffeine || 0, e.alcohol || 0,
         csvEscape(e.food), w.code || '', w.temp || ''
       ];
       rows.push(row.join(','));
@@ -1077,6 +1437,7 @@ function updateGreeting() {
 async function init() {
   updateGreeting();
   loadWeather();
+  renderStreakAndSparkline();
 
   // Show install hint if not standalone
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
