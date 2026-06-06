@@ -1,0 +1,18 @@
+{
+  "name": "Mood Tracker",
+  "short_name": "Mood",
+  "description": "매일 저녁 5분 감정 기록 트래커",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FAF8F3",
+  "theme_color": "#FAF8F3",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
