@@ -1354,6 +1354,8 @@ async function exportData(format) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+
+  localStorage.setItem('lastBackupDate', todayKey());
 }
 
 function csvEscape(s) {
@@ -1422,6 +1424,39 @@ function showInstallGuide() {
   showModal(html);
 }
 
+// ============ BACKUP REMINDER ============
+function checkBackupReminder() {
+  const last = localStorage.getItem('lastBackupDate');
+  const dismissedToday = localStorage.getItem('backupReminderDismissedAt') === todayKey();
+  if (dismissedToday) return;
+
+  const daysSince = last ? Math.floor((new Date(todayKey()) - new Date(last)) / 86400000) : Infinity;
+  if (daysSince < 7) return;
+
+  const msg = last
+    ? `마지막 백업이 ${daysSince}일 전이에요. 지금 백업할까요?`
+    : '아직 백업한 적이 없어요. 지금 백업해둘까요?';
+
+  showModal(`
+    <h3>📦 백업</h3>
+    <p>${msg}</p>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="dismissBackupReminder()">나중에</button>
+      <button class="btn-primary" onclick="backupNow()">지금 백업</button>
+    </div>
+  `);
+}
+
+function dismissBackupReminder() {
+  localStorage.setItem('backupReminderDismissedAt', todayKey());
+  closeModal();
+}
+
+async function backupNow() {
+  closeModal();
+  await exportData('csv');
+}
+
 // ============ INIT ============
 function updateGreeting() {
   const d = new Date();
@@ -1449,6 +1484,8 @@ async function init() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js').catch(e => console.log('SW failed:', e));
   }
+
+  if (isStandalone) checkBackupReminder();
 }
 
 init();
