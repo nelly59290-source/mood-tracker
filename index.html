@@ -277,11 +277,11 @@
     <div class="field" style="margin-bottom: 0;">
       <p class="field-label">수면 질</p>
       <div class="sleep-q-grid">
-        <button class="opt" data-group="sleepQuality" data-val="1" onclick="pickOne(this)">😵</button>
-        <button class="opt" data-group="sleepQuality" data-val="2" onclick="pickOne(this)">😪</button>
-        <button class="opt" data-group="sleepQuality" data-val="3" onclick="pickOne(this)">😐</button>
-        <button class="opt" data-group="sleepQuality" data-val="4" onclick="pickOne(this)">🙂</button>
-        <button class="opt" data-group="sleepQuality" data-val="5" onclick="pickOne(this)">😌</button>
+        <button class="opt" data-group="sleepQuality" data-val="1" onclick="pickOne(this)" ondblclick="clearGroup(this)">😵</button>
+        <button class="opt" data-group="sleepQuality" data-val="2" onclick="pickOne(this)" ondblclick="clearGroup(this)">😪</button>
+        <button class="opt" data-group="sleepQuality" data-val="3" onclick="pickOne(this)" ondblclick="clearGroup(this)">😐</button>
+        <button class="opt" data-group="sleepQuality" data-val="4" onclick="pickOne(this)" ondblclick="clearGroup(this)">🙂</button>
+        <button class="opt" data-group="sleepQuality" data-val="5" onclick="pickOne(this)" ondblclick="clearGroup(this)">😌</button>
       </div>
     </div>
   </div>
@@ -341,22 +341,34 @@
     <p class="card-label">컨텍스트</p>
 
     <div class="field">
-      <p class="field-label">운동</p>
+      <p class="field-label">운동 강도</p>
       <div class="btn-grid btn-grid-2">
-        <button class="opt" data-group="exercise" data-val="none" onclick="pickOne(this)">안 함</button>
-        <button class="opt" data-group="exercise" data-val="light" onclick="pickOne(this)">가벼움</button>
-        <button class="opt" data-group="exercise" data-val="moderate" onclick="pickOne(this)">중간</button>
-        <button class="opt" data-group="exercise" data-val="heavy" onclick="pickOne(this)">격함</button>
+        <button class="opt" data-group="exercise" data-val="none" onclick="pickOne(this)" ondblclick="clearGroup(this)">안 함</button>
+        <button class="opt" data-group="exercise" data-val="light" onclick="pickOne(this)" ondblclick="clearGroup(this)">가벼움</button>
+        <button class="opt" data-group="exercise" data-val="moderate" onclick="pickOne(this)" ondblclick="clearGroup(this)">중간</button>
+        <button class="opt" data-group="exercise" data-val="heavy" onclick="pickOne(this)" ondblclick="clearGroup(this)">격함</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <p class="field-label">운동 종류 (여러 개)</p>
+      <div class="tag-grid">
+        <button class="tag" data-multi="exerciseType" data-val="크로스핏" onclick="toggleMulti(this)">크로스핏</button>
+        <button class="tag" data-multi="exerciseType" data-val="러닝" onclick="toggleMulti(this)">러닝</button>
+        <button class="tag" data-multi="exerciseType" data-val="요가" onclick="toggleMulti(this)">요가</button>
+        <button class="tag" data-multi="exerciseType" data-val="필라테스" onclick="toggleMulti(this)">필라테스</button>
+        <button class="tag" data-multi="exerciseType" data-val="헬스" onclick="toggleMulti(this)">헬스</button>
+        <button class="tag" data-multi="exerciseType" data-val="산책" onclick="toggleMulti(this)">산책</button>
+        <button class="tag" data-multi="exerciseType" data-val="수영" onclick="toggleMulti(this)">수영</button>
+        <button class="tag" data-multi="exerciseType" data-val="기타" onclick="toggleMulti(this)">기타</button>
       </div>
     </div>
 
     <div class="field">
       <p class="field-label">자기 시간 (여러 개)</p>
       <div class="tag-grid">
-        <button class="tag" data-multi="selfCare" data-val="요가" onclick="toggleMulti(this)">요가</button>
         <button class="tag" data-multi="selfCare" data-val="명상" onclick="toggleMulti(this)">명상</button>
         <button class="tag" data-multi="selfCare" data-val="독서" onclick="toggleMulti(this)">독서</button>
-        <button class="tag" data-multi="selfCare" data-val="산책" onclick="toggleMulti(this)">산책</button>
         <button class="tag" data-multi="selfCare" data-val="음악" onclick="toggleMulti(this)">음악</button>
         <button class="tag" data-multi="selfCare" data-val="영화" onclick="toggleMulti(this)">영화/드라마</button>
       </div>
@@ -376,21 +388,21 @@
     <div class="field">
       <p class="field-label">업무 강도</p>
       <div class="btn-grid btn-grid-5">
-        <button class="opt" data-group="work" data-val="1" onclick="pickOne(this)">1</button>
-        <button class="opt" data-group="work" data-val="2" onclick="pickOne(this)">2</button>
-        <button class="opt" data-group="work" data-val="3" onclick="pickOne(this)">3</button>
-        <button class="opt" data-group="work" data-val="4" onclick="pickOne(this)">4</button>
-        <button class="opt" data-group="work" data-val="5" onclick="pickOne(this)">5</button>
+        <button class="opt" data-group="work" data-val="1" onclick="pickOne(this)" ondblclick="clearGroup(this)">1</button>
+        <button class="opt" data-group="work" data-val="2" onclick="pickOne(this)" ondblclick="clearGroup(this)">2</button>
+        <button class="opt" data-group="work" data-val="3" onclick="pickOne(this)" ondblclick="clearGroup(this)">3</button>
+        <button class="opt" data-group="work" data-val="4" onclick="pickOne(this)" ondblclick="clearGroup(this)">4</button>
+        <button class="opt" data-group="work" data-val="5" onclick="pickOne(this)" ondblclick="clearGroup(this)">5</button>
       </div>
     </div>
 
     <div class="field">
       <p class="field-label">생리 주기</p>
       <div class="btn-grid btn-grid-2" style="grid-template-columns: repeat(4, 1fr);">
-        <button class="opt" data-group="period" data-val="none" onclick="pickOne(this)">평소</button>
-        <button class="opt" data-group="period" data-val="pms" onclick="pickOne(this)">PMS</button>
-        <button class="opt" data-group="period" data-val="on" onclick="pickOne(this)">생리중</button>
-        <button class="opt" data-group="period" data-val="ovulation" onclick="pickOne(this)">배란</button>
+        <button class="opt" data-group="period" data-val="none" onclick="pickOne(this)" ondblclick="clearGroup(this)">평소</button>
+        <button class="opt" data-group="period" data-val="pms" onclick="pickOne(this)" ondblclick="clearGroup(this)">PMS</button>
+        <button class="opt" data-group="period" data-val="on" onclick="pickOne(this)" ondblclick="clearGroup(this)">생리중</button>
+        <button class="opt" data-group="period" data-val="ovulation" onclick="pickOne(this)" ondblclick="clearGroup(this)">배란</button>
       </div>
     </div>
 
@@ -503,7 +515,7 @@ let caffeine = 0;
 let alcohol = 0;
 let sleepHours = null; // hours, in 0.5 step. null = unset
 let selections = { exercise: null, work: null, sleepQuality: null, period: null };
-let multiSel = { tags: [], selfCare: [], social: [] };
+let multiSel = { tags: [], selfCare: [], social: [], exerciseType: [] };
 let weatherData = null;
 let calMonth = new Date().getMonth();
 let calYear = new Date().getFullYear();
@@ -591,6 +603,12 @@ function pickOne(btn) {
   document.querySelectorAll(`[data-group="${group}"]`).forEach(b => b.classList.remove('on'));
   btn.classList.add('on');
   selections[group] = btn.dataset.val;
+}
+
+function clearGroup(btn) {
+  const group = btn.dataset.group;
+  document.querySelectorAll(`[data-group="${group}"]`).forEach(b => b.classList.remove('on'));
+  selections[group] = null;
 }
 
 function adjustCaffeine(delta) {
@@ -705,6 +723,7 @@ async function saveEntry() {
     sleepHours: sleepHours,
     sleepQuality: selections.sleepQuality ? parseInt(selections.sleepQuality) : null,
     exercise: selections.exercise,
+    exerciseType: [...multiSel.exerciseType],
     selfCare: [...multiSel.selfCare],
     social: [...multiSel.social],
     work: selections.work ? parseInt(selections.work) : null,
@@ -766,7 +785,7 @@ function clearFormFields() {
   document.querySelectorAll('.opt.on').forEach(b => b.classList.remove('on'));
   document.querySelectorAll('.tag.on').forEach(b => b.classList.remove('on'));
   selections = { exercise: null, work: null, sleepQuality: null, period: null };
-  multiSel = { tags: [], selfCare: [], social: [] };
+  multiSel = { tags: [], selfCare: [], social: [], exerciseType: [] };
 }
 
 function loadEntryIntoForm(entry) {
@@ -802,6 +821,10 @@ function loadEntryIntoForm(entry) {
   (entry.tags || []).forEach(t => {
     const b = document.querySelector(`.tag[data-tag="${t}"]`);
     if (b) { b.classList.add('on'); multiSel.tags.push(t); }
+  });
+  (entry.exerciseType || []).forEach(v => {
+    const b = document.querySelector(`.tag[data-multi="exerciseType"][data-val="${v}"]`);
+    if (b) { b.classList.add('on'); multiSel.exerciseType.push(v); }
   });
   (entry.selfCare || []).forEach(v => {
     const b = document.querySelector(`.tag[data-multi="selfCare"][data-val="${v}"]`);
@@ -1037,6 +1060,7 @@ function showDayDetail(day, entry) {
   }
   const ctx = [];
   if (entry.exercise) ctx.push(`운동 ${ {none:'안 함',light:'가벼움',moderate:'중간',heavy:'격함'}[entry.exercise] }`);
+  if (entry.exerciseType?.length) ctx.push(`운동 종류: ${entry.exerciseType.join(',')}`);
   if (entry.selfCare?.length) ctx.push(`자기시간: ${entry.selfCare.join(',')}`);
   if (entry.social?.length) ctx.push(`사람: ${entry.social.join(',')}`);
   if (entry.work) ctx.push(`업무 ${entry.work}`);
@@ -1319,7 +1343,7 @@ async function exportData(format) {
 
   let content, filename, mime;
   if (format === 'csv') {
-    const headers = ['date','valence','arousal','tags','sleep_hours','sleep_quality','peak','gratitude','exercise','self_care','social','work','period','caffeine','alcohol','food','weather_code','weather_temp'];
+    const headers = ['date','valence','arousal','tags','sleep_hours','sleep_quality','peak','gratitude','exercise','exercise_type','self_care','social','work','period','caffeine','alcohol','food','weather_code','weather_temp'];
     const rows = [headers.join(',')];
     all.forEach(e => {
       const w = e.weather || {};
@@ -1330,6 +1354,7 @@ async function exportData(format) {
         e.sleepQuality || '',
         csvEscape(e.peak), csvEscape(e.gratitude),
         e.exercise || '',
+        csvEscape((e.exerciseType || []).join('|')),
         csvEscape((e.selfCare || []).join('|')),
         csvEscape((e.social || []).join('|')),
         e.work || '', e.period || '',
