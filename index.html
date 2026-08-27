@@ -1345,7 +1345,7 @@ function sd(arr) {
 // iOS는 홈화면에 추가한 웹앱에서만 푸시가 된다 (사파리 탭에서는 불가).
 const VAPID_PUBLIC_KEY = 'BLOYnpEHpH7raOxMsiDc9ka3QtyfTaa-YcP16J1aqrvSWpkZosBvFhXXwOHpUIOHw134ZVXCZacFEusOzDPflZA';
 // 배포 후 실제 Worker 주소로 교체. localStorage로 덮어쓸 수 있게 해서 테스트를 쉽게 한다.
-const PUSH_API_DEFAULT = '';
+const PUSH_API_DEFAULT = 'https://mood-tracker-push.nelly59290.workers.dev';
 
 function pushApi() {
   return (localStorage.getItem('pushApi') || PUSH_API_DEFAULT).replace(/\/+$/, '');

@@ -1,6 +1,7 @@
 name = "mood-tracker-push"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
+workers_dev = true
 
 # 20:00 KST = 11:00 UTC. 서머타임 없는 나라라 고정이면 된다.
 [triggers]
@@ -18,4 +19,4 @@ VAPID_PUBLIC_KEY = "BLOYnpEHpH7raOxMsiDc9ka3QtyfTaa-YcP16J1aqrvSWpkZosBvFhXXwOHp
 
 [[kv_namespaces]]
 binding = "SUBS"
-id = "PLACEHOLDER"
+id = "3c69e4ea81db46a9907e58dd79143326"
