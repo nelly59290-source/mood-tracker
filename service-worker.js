@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mood-tracker-v4';
+const CACHE_NAME = 'mood-tracker-v5';
 const ASSETS = [
   './',
   './index.html',
@@ -24,9 +24,16 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  const url = event.request.url;
+
   // 날씨 API는 항상 네트워크로
-  if (event.request.url.includes('open-meteo.com')) {
+  if (url.includes('open-meteo.com')) {
     event.respondWith(fetch(event.request).catch(() => new Response('{}')));
+    return;
+  }
+
+  // Gist 동기화는 절대 캐시하지 않는다 (캐시되면 옛 데이터를 계속 읽게 됨)
+  if (url.includes('api.github.com') || url.includes('gist.githubusercontent.com')) {
     return;
   }
   event.respondWith(

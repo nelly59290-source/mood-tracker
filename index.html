@@ -87,12 +87,12 @@
   .slider-out { text-align: center; font-size: 13px; color: var(--ink-2); margin-top: 10px; font-family: var(--serif); font-style: italic; }
 
   /* Textareas */
-  textarea, input[type="text"] {
+  textarea, input[type="text"], input[type="password"] {
     width: 100%; padding: 10px 12px; background: var(--bg-2); border: 1px solid transparent;
     border-radius: 8px; font-family: var(--sans); font-size: 14px; color: var(--ink);
     transition: border-color 0.15s; resize: none;
   }
-  textarea:focus, input[type="text"]:focus { border-color: var(--ink-3); outline: none; background: var(--bg); }
+  textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-color: var(--ink-3); outline: none; background: var(--bg); }
   textarea { min-height: 56px; }
   textarea::placeholder, input::placeholder { color: var(--ink-3); }
 
@@ -496,6 +496,8 @@
   <button class="btn-secondary" onclick="exportData('json')">📦 JSON 백업</button>
   <button class="btn-secondary" onclick="showImportModal()">📥 백업 복원</button>
   <input type="file" id="import-file" accept=".json" style="display: none;" onchange="importData(this)">
+  <button class="btn-secondary" onclick="showSyncModal()">☁️ 기기 간 동기화</button>
+  <p id="sync-summary" style="font-size: 12px; color: var(--ink-3); text-align: center; margin-top: 10px;"></p>
 </div>
 
 <!-- Reset confirmation modal -->
@@ -743,6 +745,7 @@ async function saveEntry() {
     const isNewEntry = !existingBefore;
     resetForm();
     renderStreakAndSparkline();
+    autoSync();
     const msg = document.getElementById('save-msg');
     msg.textContent = isNewEntry ? '✓ 기록 추가됨' : '✓ 수정 완료';
     setTimeout(() => { msg.textContent = ''; }, 2500);
@@ -1335,6 +1338,293 @@ function sd(arr) {
   return Math.sqrt(arr.reduce((acc, v) => acc + (v - m) ** 2, 0) / arr.length);
 }
 
+// ============ GIST SYNC ============
+// 기록 전체를 GitHub 비공개 Gist에 JSON 한 덩어리로 보관해서 기기 간에 맞춘다.
+// 병합 규칙: 같은 날짜는 savedAt이 더 최근인 쪽이 이긴다 (last-write-wins).
+const GIST_FILENAME = 'mood-tracker.json';
+const GIST_API = 'https://api.github.com';
+let syncInFlight = null;
+
+function syncCfg() {
+  return {
+    token: localStorage.getItem('gistToken') || '',
+    gistId: localStorage.getItem('gistId') || ''
+  };
+}
+
+function syncEnabled() {
+  const c = syncCfg();
+  return !!(c.token && c.gistId);
+}
+
+async function gistFetch(path, options) {
+  options = options || {};
+  const token = syncCfg().token;
+  if (!token) throw new Error('토큰이 없어요');
+  const headers = {
+    'Authorization': 'Bearer ' + token,
+    'Accept': 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28'
+  };
+  if (options.body) headers['Content-Type'] = 'application/json';
+  let res;
+  try {
+    res = await fetch(GIST_API + path, {
+      method: options.method || 'GET',
+      body: options.body,
+      cache: 'no-store',
+      headers: headers
+    });
+  } catch (e) {
+    throw new Error('네트워크에 연결되지 않았어요');
+  }
+  if (!res.ok) {
+    if (res.status === 401) throw new Error('토큰이 잘못됐거나 만료됐어요');
+    if (res.status === 403) throw new Error('토큰에 gist 권한이 없어요');
+    if (res.status === 404) throw new Error('Gist를 찾을 수 없어요 (ID 확인)');
+    let detail = '';
+    try { detail = (await res.json()).message || ''; } catch (e) {}
+    throw new Error('GitHub 오류 ' + res.status + (detail ? ': ' + detail : ''));
+  }
+  return res.json();
+}
+
+function parseGistId(raw) {
+  if (!raw) return '';
+  const m = String(raw).trim().match(/([0-9a-f]{20,})/i);
+  return m ? m[1] : '';
+}
+
+async function readRemoteEntries() {
+  const gist = await gistFetch('/gists/' + syncCfg().gistId);
+  const file = gist.files && gist.files[GIST_FILENAME];
+  if (!file) return [];
+  let text = file.content;
+  if (file.truncated || text == null) {
+    const raw = await fetch(file.raw_url, { cache: 'no-store' });
+    if (!raw.ok) throw new Error('원격 데이터를 읽지 못했어요');
+    text = await raw.text();
+  }
+  if (!text || !text.trim()) return [];
+  const data = JSON.parse(text);
+  return Array.isArray(data.entries) ? data.entries : [];
+}
+
+async function writeRemoteEntries(entries) {
+  const content = JSON.stringify({ exportedAt: new Date().toISOString(), entries: entries }, null, 2);
+  const files = {};
+  files[GIST_FILENAME] = { content: content };
+  await gistFetch('/gists/' + syncCfg().gistId, {
+    method: 'PATCH',
+    body: JSON.stringify({ files: files })
+  });
+}
+
+// a가 b보다 최신이면 true. savedAt이 없는 옛 기록은 항상 지는 쪽으로 둔다.
+function isNewerEntry(a, b) {
+  const ta = a && a.savedAt ? Date.parse(a.savedAt) : NaN;
+  const tb = b && b.savedAt ? Date.parse(b.savedAt) : NaN;
+  if (isNaN(ta)) return false;
+  if (isNaN(tb)) return true;
+  return ta > tb;
+}
+
+function entriesFingerprint(entries) {
+  return entries.map(e => e.date + '|' + (e.savedAt || '')).join(',');
+}
+
+// 양방향: 원격을 읽어 로컬에 병합하고, 병합 결과를 다시 원격에 쓴다.
+async function syncNow() {
+  if (!syncEnabled()) return null;
+  if (syncInFlight) return syncInFlight;
+  syncInFlight = (async () => {
+    const remote = await readRemoteEntries();
+    const local = await getAllEntries();
+    const byDate = {};
+    local.forEach(e => { if (e && e.date) byDate[e.date] = e; });
+
+    let pulled = 0;
+    for (const r of remote) {
+      if (!r || !r.date) continue;
+      const cur = byDate[r.date];
+      if (!cur || isNewerEntry(r, cur)) {
+        await putEntry(r);
+        byDate[r.date] = r;
+        pulled++;
+      }
+    }
+
+    const merged = Object.keys(byDate).sort().map(k => byDate[k]);
+    const remoteSorted = remote.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const pushed = entriesFingerprint(merged) !== entriesFingerprint(remoteSorted);
+    if (pushed) await writeRemoteEntries(merged);
+
+    localStorage.setItem('lastSyncAt', new Date().toISOString());
+    if (pulled > 0) refreshCurrentView();
+    updateSyncSummary();
+    return { pulled: pulled, pushed: pushed, total: merged.length };
+  })();
+  try {
+    return await syncInFlight;
+  } finally {
+    syncInFlight = null;
+  }
+}
+
+function refreshCurrentView() {
+  if (document.getElementById('screen-cal').style.display !== 'none') renderCalendar();
+  else if (document.getElementById('screen-stat').style.display !== 'none') renderStats();
+  renderStreakAndSparkline();
+}
+
+// 저장 직후 조용히 동기화. 실패해도 저장 자체는 이미 끝났으니 방해하지 않는다.
+function autoSync() {
+  if (!syncEnabled()) return;
+  syncNow().catch(e => {
+    console.log('sync failed:', e.message);
+    updateSyncSummary('⚠️ 동기화 실패: ' + e.message);
+  });
+}
+
+function formatSyncTime(iso) {
+  const t = Date.parse(iso);
+  if (isNaN(t)) return '';
+  const diffMin = Math.floor((Date.now() - t) / 60000);
+  if (diffMin < 1) return '방금';
+  if (diffMin < 60) return diffMin + '분 전';
+  const d = new Date(t);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  const hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  return sameDay ? '오늘 ' + hm : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + hm;
+}
+
+function updateSyncSummary(override) {
+  const el = document.getElementById('sync-summary');
+  if (!el) return;
+  if (override) { el.textContent = override; return; }
+  if (!syncEnabled()) { el.textContent = '동기화 꺼짐 — 이 기기에만 저장돼요'; return; }
+  const last = localStorage.getItem('lastSyncAt');
+  el.textContent = last ? '☁️ 마지막 동기화 ' + formatSyncTime(last) : '☁️ 동기화 연결됨';
+}
+
+function setSyncStatus(msg, isError) {
+  const el = document.getElementById('sync-status');
+  if (el) {
+    el.textContent = msg;
+    el.style.color = isError ? '#C0563F' : 'var(--ink-3)';
+  }
+}
+
+function showSyncModal() {
+  const cfg = syncCfg();
+  const connected = syncEnabled();
+  const last = localStorage.getItem('lastSyncAt');
+  const inputStyle = 'margin-bottom: 10px;';
+  showModal(
+    '<h3>☁️ 기기 간 동기화</h3>' +
+    '<p>기록을 본인 GitHub <strong>비공개 Gist</strong>에 보관해서 폰과 맥이 같은 데이터를 보게 합니다. 다른 사람은 볼 수 없어요.</p>' +
+    (connected
+      ? '<p style="margin-bottom: 12px;">연결됨 · Gist <code>' + cfg.gistId.slice(0, 8) + '…</code>' +
+        (last ? '<br>마지막 동기화 ' + formatSyncTime(last) : '') + '</p>'
+      : '') +
+    '<label style="display:block; font-size:12px; color:var(--ink-3); margin-bottom:4px;">GitHub 토큰 (gist 권한)</label>' +
+    '<input type="password" id="sync-token" style="' + inputStyle + '" placeholder="ghp_…" value="' + escapeAttr(cfg.token) + '">' +
+    '<label style="display:block; font-size:12px; color:var(--ink-3); margin-bottom:4px;">Gist ID <span style="opacity:0.7">(비워두면 자동으로 찾거나 만듦)</span></label>' +
+    '<input type="text" id="sync-gist-id" style="' + inputStyle + '" placeholder="자동" value="' + escapeAttr(cfg.gistId) + '">' +
+    '<p id="sync-status" style="min-height: 18px; margin-bottom: 12px;"></p>' +
+    '<div class="modal-actions">' +
+      '<button class="btn-secondary" onclick="closeModal()">닫기</button>' +
+      (connected
+        ? '<button class="btn-primary" onclick="runManualSync()">지금 동기화</button>'
+        : '<button class="btn-primary" onclick="connectSync()">연결</button>') +
+    '</div>' +
+    (connected
+      ? '<button class="btn-secondary" style="margin-top:8px;" onclick="disconnectSync()">연결 해제</button>'
+      : '<p style="font-size:12px; margin-top:12px; margin-bottom:0;">토큰은 github.com/settings/tokens 에서 <strong>Tokens (classic)</strong> → gist 권한만 체크해서 만드세요. 토큰은 이 기기에만 저장됩니다.</p>')
+  );
+}
+
+function escapeAttr(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+async function findOrCreateGist() {
+  const list = await gistFetch('/gists?per_page=100');
+  const found = (list || []).find(g => g.files && g.files[GIST_FILENAME]);
+  if (found) return found.id;
+  const all = await getAllEntries();
+  all.sort((a, b) => a.date.localeCompare(b.date));
+  const files = {};
+  files[GIST_FILENAME] = { content: JSON.stringify({ exportedAt: new Date().toISOString(), entries: all }, null, 2) };
+  const created = await gistFetch('/gists', {
+    method: 'POST',
+    body: JSON.stringify({
+      description: 'mood-tracker sync (앱이 사용 중 — 지우지 마세요)',
+      public: false,
+      files: files
+    })
+  });
+  return created.id;
+}
+
+async function connectSync() {
+  const token = document.getElementById('sync-token').value.trim();
+  const idInput = document.getElementById('sync-gist-id').value.trim();
+  if (!token) { setSyncStatus('토큰을 입력해주세요', true); return; }
+
+  const prev = syncCfg();
+  localStorage.setItem('gistToken', token);
+  setSyncStatus('연결 중…');
+  try {
+    let gistId = parseGistId(idInput);
+    if (!gistId) {
+      if (idInput) throw new Error('Gist ID 형식이 아니에요');
+      setSyncStatus('Gist를 찾는 중…');
+      gistId = await findOrCreateGist();
+    }
+    localStorage.setItem('gistId', gistId);
+    setSyncStatus('기록을 맞추는 중…');
+    const res = await syncNow();
+    setSyncStatus('✓ 연결 완료 · ' + (res.pulled > 0 ? res.pulled + '개 가져옴 · ' : '') + '총 ' + res.total + '개');
+    setTimeout(showSyncModal, 1200);
+  } catch (e) {
+    localStorage.setItem('gistToken', prev.token);
+    if (prev.gistId) localStorage.setItem('gistId', prev.gistId); else localStorage.removeItem('gistId');
+    setSyncStatus('실패: ' + e.message, true);
+  }
+  updateSyncSummary();
+}
+
+async function runManualSync() {
+  setSyncStatus('동기화 중…');
+  try {
+    const res = await syncNow();
+    setSyncStatus('✓ ' + (res.pulled > 0 ? res.pulled + '개 가져옴 · ' : '새로 가져올 것 없음 · ') + '총 ' + res.total + '개');
+  } catch (e) {
+    setSyncStatus('실패: ' + e.message, true);
+  }
+  updateSyncSummary();
+}
+
+function disconnectSync() {
+  showModal(
+    '<h3>연결 해제</h3>' +
+    '<p>이 기기에서 토큰을 지웁니다. Gist에 있는 기록과 이 기기의 기록은 그대로 남아요.</p>' +
+    '<div class="modal-actions">' +
+      '<button class="btn-secondary" onclick="showSyncModal()">취소</button>' +
+      '<button class="btn-primary" onclick="confirmDisconnect()">해제</button>' +
+    '</div>'
+  );
+}
+
+function confirmDisconnect() {
+  localStorage.removeItem('gistToken');
+  localStorage.removeItem('gistId');
+  localStorage.removeItem('lastSyncAt');
+  closeModal();
+  updateSyncSummary();
+}
+
 // ============ EXPORT / IMPORT ============
 async function exportData(format) {
   const all = await getAllEntries();
@@ -1425,6 +1715,7 @@ async function confirmImport() {
   }
   alert(`${entries.length}개 복원 완료`);
   window._pendingImport = null;
+  autoSync();
 }
 
 function showModal(html) {
@@ -1498,6 +1789,8 @@ async function init() {
   updateGreeting();
   loadWeather();
   renderStreakAndSparkline();
+  updateSyncSummary();
+  autoSync();
 
   // Show install hint if not standalone
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
