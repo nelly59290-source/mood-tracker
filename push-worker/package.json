@@ -1,0 +1,16 @@
+{
+  "name": "mood-tracker-push",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "web-push-browser": "^1.4.2"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

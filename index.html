@@ -498,6 +498,8 @@
   <input type="file" id="import-file" accept=".json" style="display: none;" onchange="importData(this)">
   <button class="btn-secondary" onclick="showSyncModal()">☁️ 기기 간 동기화</button>
   <p id="sync-summary" style="font-size: 12px; color: var(--ink-3); text-align: center; margin-top: 10px;"></p>
+  <button class="btn-secondary" onclick="showPushModal()">🔔 저녁 알림</button>
+  <p id="push-summary" style="font-size: 12px; color: var(--ink-3); text-align: center; margin-top: 10px;"></p>
 </div>
 
 <!-- Reset confirmation modal -->
@@ -1338,6 +1340,182 @@ function sd(arr) {
   return Math.sqrt(arr.reduce((acc, v) => acc + (v - m) ** 2, 0) / arr.length);
 }
 
+// ============ 저녁 리마인더 알림 ============
+// 발송은 Cloudflare Worker가 한다. 앱은 구독만 등록/해제한다.
+// iOS는 홈화면에 추가한 웹앱에서만 푸시가 된다 (사파리 탭에서는 불가).
+const VAPID_PUBLIC_KEY = 'BLOYnpEHpH7raOxMsiDc9ka3QtyfTaa-YcP16J1aqrvSWpkZosBvFhXXwOHpUIOHw134ZVXCZacFEusOzDPflZA';
+// 배포 후 실제 Worker 주소로 교체. localStorage로 덮어쓸 수 있게 해서 테스트를 쉽게 한다.
+const PUSH_API_DEFAULT = '';
+
+function pushApi() {
+  return (localStorage.getItem('pushApi') || PUSH_API_DEFAULT).replace(/\/+$/, '');
+}
+
+function isStandaloneApp() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function isIOS() {
+  return /iPhone|iPad|iPod/.test(navigator.userAgent);
+}
+
+function pushSupported() {
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(base64);
+  const arr = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+
+async function currentSubscription() {
+  if (!pushSupported()) return null;
+  const reg = await navigator.serviceWorker.ready;
+  return reg.pushManager.getSubscription();
+}
+
+async function pushPost(path, body) {
+  const api = pushApi();
+  if (!api) throw new Error('알림 서버 주소가 설정되지 않았어요');
+  let res;
+  try {
+    res = await fetch(api + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+  } catch (e) {
+    throw new Error('알림 서버에 연결되지 않았어요');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ('서버 오류 ' + res.status));
+  return data;
+}
+
+async function enablePush() {
+  setPushStatus('알림 권한을 요청하는 중…');
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      setPushStatus('알림이 허용되지 않았어요', true);
+      return;
+    }
+    setPushStatus('등록하는 중…');
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+      });
+    }
+    await pushPost('/subscribe', {
+      subscription: sub.toJSON(),
+      label: isIOS() ? 'iPhone' : (navigator.platform || '')
+    });
+    localStorage.setItem('pushEnabled', '1');
+    setPushStatus('✓ 알림이 켜졌어요. 매일 저녁 8시에 옵니다');
+    setTimeout(showPushModal, 1400);
+  } catch (e) {
+    setPushStatus('실패: ' + e.message, true);
+  }
+}
+
+async function disablePush() {
+  setPushStatus('끄는 중…');
+  try {
+    const sub = await currentSubscription();
+    if (sub) {
+      await pushPost('/unsubscribe', { endpoint: sub.endpoint }).catch(() => {});
+      await sub.unsubscribe();
+    }
+    localStorage.removeItem('pushEnabled');
+    setPushStatus('알림을 껐어요');
+    setTimeout(showPushModal, 1000);
+  } catch (e) {
+    setPushStatus('실패: ' + e.message, true);
+  }
+}
+
+async function testPush() {
+  setPushStatus('보내는 중…');
+  try {
+    const sub = await currentSubscription();
+    if (!sub) { setPushStatus('먼저 알림을 켜주세요', true); return; }
+    await pushPost('/test', { endpoint: sub.endpoint });
+    setPushStatus('보냈어요. 잠시 후 알림이 뜹니다');
+  } catch (e) {
+    setPushStatus('실패: ' + e.message, true);
+  }
+}
+
+function setPushStatus(msg, isError) {
+  const el = document.getElementById('push-status');
+  if (el) {
+    el.textContent = msg;
+    el.style.color = isError ? '#C0563F' : 'var(--ink-3)';
+  }
+}
+
+async function showPushModal() {
+  const note = (t) => '<p style="font-size:12px; margin-top:12px; margin-bottom:0;">' + t + '</p>';
+  const close = '<div class="modal-actions"><button class="btn-secondary" onclick="closeModal()">닫기</button></div>';
+
+  if (!pushSupported()) {
+    showModal('<h3>🔔 저녁 알림</h3><p>이 브라우저는 웹 알림을 지원하지 않아요.</p>' + close);
+    return;
+  }
+  if (isIOS() && !isStandaloneApp()) {
+    showModal('<h3>🔔 저녁 알림</h3><p>iOS에서는 <strong>홈화면에 추가한 앱</strong>에서만 알림을 받을 수 있어요. 사파리 탭에서는 안 됩니다.</p><p>공유 버튼 ⬆️ → "홈 화면에 추가" 후, 홈화면 아이콘으로 앱을 열어서 다시 시도해주세요.</p>' + close);
+    return;
+  }
+  if (!pushApi()) {
+    showModal('<h3>🔔 저녁 알림</h3><p>알림 서버 주소가 아직 설정되지 않았어요.</p>' + close);
+    return;
+  }
+
+  const permission = Notification.permission;
+  if (permission === 'denied') {
+    showModal('<h3>🔔 저녁 알림</h3><p>알림이 차단되어 있어요. iOS <strong>설정 → 알림 → Mood Tracker</strong> 에서 허용으로 바꾼 뒤 다시 시도해주세요.</p>' + close);
+    return;
+  }
+
+  const sub = await currentSubscription();
+  const on = !!sub && permission === 'granted';
+
+  showModal(
+    '<h3>🔔 저녁 알림</h3>' +
+    '<p>매일 <strong>저녁 8시</strong>에 기록하라고 알려줍니다. 알림을 탭하면 바로 기록 화면이 열려요.</p>' +
+    (on ? '<p style="margin-bottom:12px;">현재 <strong>켜짐</strong></p>' : '') +
+    '<p id="push-status" style="min-height:18px; margin-bottom:12px;"></p>' +
+    (on
+      ? '<div class="modal-actions">' +
+          '<button class="btn-secondary" onclick="closeModal()">닫기</button>' +
+          '<button class="btn-primary" onclick="testPush()">테스트 발송</button>' +
+        '</div>' +
+        '<button class="btn-secondary" style="margin-top:8px;" onclick="disablePush()">알림 끄기</button>'
+      : '<div class="modal-actions">' +
+          '<button class="btn-secondary" onclick="closeModal()">닫기</button>' +
+          '<button class="btn-primary" onclick="enablePush()">알림 켜기</button>' +
+        '</div>' +
+        note('알림 시간을 바꾸려면 알려주세요. 서버 쪽 설정입니다.'))
+  );
+}
+
+async function updatePushSummary() {
+  const el = document.getElementById('push-summary');
+  if (!el) return;
+  if (!pushSupported()) { el.textContent = '이 브라우저는 알림 미지원'; return; }
+  if (isIOS() && !isStandaloneApp()) { el.textContent = '🔔 알림은 홈화면 앱에서만 가능해요'; return; }
+  if (Notification.permission !== 'granted') { el.textContent = '🔔 저녁 알림 꺼짐'; return; }
+  const sub = await currentSubscription();
+  el.textContent = sub ? '🔔 매일 저녁 8시 알림 켜짐' : '🔔 저녁 알림 꺼짐';
+}
+
 // ============ GIST SYNC ============
 // 기록 전체를 GitHub 비공개 Gist에 JSON 한 덩어리로 보관해서 기기 간에 맞춘다.
 // 병합 규칙: 같은 날짜는 savedAt이 더 최근인 쪽이 이긴다 (last-write-wins).
@@ -1791,6 +1969,7 @@ async function init() {
   renderStreakAndSparkline();
   updateSyncSummary();
   autoSync();
+  updatePushSummary();
 
   // Show install hint if not standalone
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;

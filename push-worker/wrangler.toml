@@ -1,0 +1,21 @@
+name = "mood-tracker-push"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+# 20:00 KST = 11:00 UTC. 서머타임 없는 나라라 고정이면 된다.
+[triggers]
+crons = ["0 11 * * *"]
+
+[vars]
+VAPID_PUBLIC_KEY = "BLOYnpEHpH7raOxMsiDc9ka3QtyfTaa-YcP16J1aqrvSWpkZosBvFhXXwOHpUIOHw134ZVXCZacFEusOzDPflZA"
+
+# 아래 둘은 secret으로 넣는다 (공개 저장소라 파일에 두지 않는다):
+#   npx wrangler secret put VAPID_PRIVATE_KEY
+#   npx wrangler secret put VAPID_CONTACT_EMAIL
+#
+# KV 네임스페이스는 배포 전에 만들고 아래 id를 채운다:
+#   npx wrangler kv namespace create SUBS
+
+[[kv_namespaces]]
+binding = "SUBS"
+id = "PLACEHOLDER"
