@@ -223,6 +223,19 @@
   .tag:active { transform: scale(0.97); }
   .tag.on { background: var(--ink); color: var(--bg); border-color: var(--ink); font-weight: 500; }
 
+  /* Protein tracking */
+  .p-summary { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 4px; }
+  .p-total { font-family: var(--serif); font-size: 26px; line-height: 1.2; }
+  .p-total span { font-size: 14px; color: var(--ink-3); }
+  .p-status { font-family: var(--serif); font-style: italic; font-size: 12px; text-align: right; }
+  .p-bar { height: 9px; border-radius: 6px; background: var(--bg-3); overflow: hidden; margin: 8px 0 2px; }
+  .p-fill { height: 100%; border-radius: 6px; background: var(--success); width: 0; transition: width 0.25s ease; }
+  .p-goal-line { font-size: 11px; color: var(--ink-3); display: flex; justify-content: space-between; gap: 8px; }
+  .p-goal-line a { color: var(--accent); text-decoration: none; }
+  .mini-bars { display: flex; gap: 3px; align-items: flex-end; height: 46px; margin: 10px 0 6px; }
+  .mini-bar { flex: 1; background: var(--bg-3); border-radius: 2px 2px 0 0; min-height: 2px; }
+  .mini-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--ink-3); }
+
   /* Sleep card */
   .sleep-row { display: flex; align-items: center; gap: 14px; }
   .sleep-q-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; }
@@ -338,7 +351,8 @@
   </div>
 
   <div class="card">
-    <p class="card-label">컨텍스트</p>
+    <p class="card-label">🏋️ 운동 & 단백질</p>
+    <p class="card-hint">오늘 몸을 얼마나 썼고, 그만큼 먹었는지</p>
 
     <div class="field">
       <p class="field-label">운동 강도</p>
@@ -363,6 +377,36 @@
         <button class="tag" data-multi="exerciseType" data-val="기타" onclick="toggleMulti(this)">기타</button>
       </div>
     </div>
+
+    <div class="field">
+      <p class="field-label">먹은 것 (탭할수록 개수 ↑, 더블탭 해제)</p>
+      <div class="tag-grid" id="protein-grid"></div>
+    </div>
+
+    <div class="field">
+      <p class="field-label">그 외 단백질 직접 추가 (g)</p>
+      <div class="stepper">
+        <button onclick="adjustProteinExtra(-5)">−</button>
+        <span class="stepper-val" id="protein-extra-val">0</span>
+        <button onclick="adjustProteinExtra(5)">+</button>
+      </div>
+    </div>
+
+    <div class="field" style="margin-bottom: 0;">
+      <div class="p-summary">
+        <p class="p-total"><span id="protein-total">0</span><span> g</span></p>
+        <p class="p-status" id="protein-status"></p>
+      </div>
+      <div class="p-bar"><div class="p-fill" id="protein-fill"></div></div>
+      <div class="p-goal-line">
+        <span id="protein-goal-text">목표 미설정</span>
+        <a href="#" onclick="showProteinGoalModal(); return false;">목표 설정</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="card-label">컨텍스트</p>
 
     <div class="field">
       <p class="field-label">자기 시간 (여러 개)</p>
@@ -520,6 +564,8 @@ let alcohol = 0;
 let sleepHours = null; // hours, in 0.5 step. null = unset
 let selections = { exercise: null, work: null, sleepQuality: null, period: null };
 let multiSel = { tags: [], selfCare: [], social: [], exerciseType: [] };
+let proteinItems = {};  // { '계란': 2, '단백질 음료': 1 }
+let proteinExtra = 0;   // 프리셋에 없는 단백질 (g)
 let weatherData = null;
 let calMonth = new Date().getMonth();
 let calYear = new Date().getFullYear();
@@ -595,6 +641,180 @@ async function clearAllEntries() {
     tx.oncomplete = () => resolve();
     tx.onerror = () => reject(tx.error);
   });
+}
+
+// ============ PROTEIN ============
+// g = 1인분 기준 단백질 추정치. 정확한 영양성분표가 아니라 "대충 맞는" 값.
+const PROTEIN_PRESETS = [
+  { name: '선식',       unit: '1잔',   g: 16 },
+  { name: '계란',       unit: '1개',   g: 6 },
+  { name: '회사밥',     unit: '한 끼', g: 25 },
+  { name: '단백질 음료', unit: '1병',   g: 20 },
+  { name: '그릭요거트',  unit: '1개',   g: 10 },
+  { name: '프로틴 파우더', unit: '1스쿱', g: 24 },
+  { name: '닭가슴살',    unit: '100g',  g: 23 },
+  { name: '고기',       unit: '100g',  g: 20 },
+  { name: '생선',       unit: '1토막', g: 18 },
+  { name: '두부',       unit: '반 모', g: 10 },
+  { name: '우유',       unit: '1잔',   g: 6 },
+  { name: '견과류',     unit: '한 줌', g: 5 },
+];
+const PROTEIN_G = {};
+PROTEIN_PRESETS.forEach(p => { PROTEIN_G[p.name] = p.g; });
+
+const RATIO_PRESETS = [
+  { val: 1.2, label: '유지', hint: '가볍게 움직이는 시기' },
+  { val: 1.6, label: '근성장', hint: '주 3회 이상 운동' },
+  { val: 2.0, label: '고강도', hint: '빡세게 늘리는 중' },
+];
+
+function proteinCfg() {
+  const w = parseFloat(localStorage.getItem('proteinWeight'));
+  const r = parseFloat(localStorage.getItem('proteinRatio'));
+  return { weight: isFinite(w) && w > 0 ? w : null, ratio: isFinite(r) && r > 0 ? r : 1.6 };
+}
+
+// 목표 g. 체중이 없으면 null (= 목표 미설정)
+function proteinGoal() {
+  const c = proteinCfg();
+  return c.weight ? Math.round(c.weight * c.ratio) : null;
+}
+
+function proteinTotal() {
+  let sum = proteinExtra;
+  Object.entries(proteinItems).forEach(([name, n]) => { sum += (PROTEIN_G[name] || 0) * n; });
+  return sum;
+}
+
+// 아무것도 안 만졌으면 "기록 안 함"으로 취급 (0g과 구분)
+function proteinTouched() {
+  return Object.keys(proteinItems).length > 0 || proteinExtra > 0;
+}
+
+function renderProteinGrid() {
+  const grid = document.getElementById('protein-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+  PROTEIN_PRESETS.forEach(p => {
+    const b = document.createElement('button');
+    b.className = 'tag';
+    b.dataset.protein = p.name;
+    b.title = `${p.unit} · 단백질 약 ${p.g}g`;
+    b.onclick = () => cycleProtein(b);
+    b.ondblclick = () => clearProtein(b);
+    grid.appendChild(b);
+  });
+  syncProteinChips();
+}
+
+function cycleProtein(btn) {
+  const name = btn.dataset.protein;
+  const next = ((proteinItems[name] || 0) + 1) % 6; // 0~5 순환
+  if (next === 0) delete proteinItems[name];
+  else proteinItems[name] = next;
+  syncProteinChips();
+  updateProteinUI();
+}
+
+function clearProtein(btn) {
+  delete proteinItems[btn.dataset.protein];
+  syncProteinChips();
+  updateProteinUI();
+}
+
+function syncProteinChips() {
+  document.querySelectorAll('[data-protein]').forEach(b => {
+    const n = proteinItems[b.dataset.protein] || 0;
+    b.classList.toggle('on', n > 0);
+    b.textContent = b.dataset.protein + (n > 1 ? ` ×${n}` : '');
+  });
+}
+
+function adjustProteinExtra(delta) {
+  proteinExtra = Math.max(0, Math.min(200, proteinExtra + delta));
+  document.getElementById('protein-extra-val').textContent = proteinExtra;
+  updateProteinUI();
+}
+
+function proteinVerdict(total, goal) {
+  if (!goal) return { text: '', color: 'var(--ink-3)' };
+  const pct = total / goal;
+  if (pct >= 1.3) return { text: `목표보다 ${total - goal}g 많아요`, color: 'var(--info)' };
+  if (pct >= 1) return { text: '충분히 채웠어요 ✓', color: 'var(--success)' };
+  if (pct >= 0.8) return { text: `${goal - total}g만 더`, color: 'var(--warn)' };
+  return { text: `${goal - total}g 부족`, color: 'var(--accent)' };
+}
+
+function updateProteinUI() {
+  const total = proteinTotal();
+  const goal = proteinGoal();
+  document.getElementById('protein-total').textContent = total;
+  const fill = document.getElementById('protein-fill');
+  const status = document.getElementById('protein-status');
+  const goalText = document.getElementById('protein-goal-text');
+  if (goal) {
+    const v = proteinVerdict(total, goal);
+    fill.style.width = Math.min(100, (total / goal) * 100) + '%';
+    fill.style.background = v.color;
+    status.textContent = v.text;
+    status.style.color = v.color;
+    const c = proteinCfg();
+    goalText.textContent = `목표 ${goal}g · ${c.weight}kg × ${c.ratio}`;
+  } else {
+    fill.style.width = '0';
+    status.textContent = '';
+    goalText.textContent = '목표 미설정 — 체중을 넣으면 계산돼요';
+  }
+}
+
+function showProteinGoalModal() {
+  const c = proteinCfg();
+  const inputStyle = 'width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; margin-bottom: 12px;';
+  const ratioBtns = RATIO_PRESETS.map(r =>
+    `<button class="opt${Math.abs(c.ratio - r.val) < 0.01 ? ' on' : ''}" data-group="proteinRatio" data-val="${r.val}" onclick="pickRatio(this)">${r.label}<br><span style="font-size:10px; color:var(--ink-3);">${r.val}g/kg</span></button>`
+  ).join('');
+  showModal(
+    '<h3>단백질 목표</h3>' +
+    '<p style="font-size:13px; color:var(--ink-2); margin-bottom:14px;">체중 × 계수로 하루 목표를 계산해요.</p>' +
+    '<p class="field-label">체중 (kg)</p>' +
+    `<input type="number" inputmode="decimal" step="0.1" id="protein-weight" style="${inputStyle}" placeholder="예: 55" value="${c.weight != null ? c.weight : ''}">` +
+    '<p class="field-label">계수 (g/kg)</p>' +
+    `<div class="btn-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 10px;">${ratioBtns}</div>` +
+    `<input type="number" inputmode="decimal" step="0.1" id="protein-ratio" style="${inputStyle}" placeholder="직접 입력" value="${c.ratio}">` +
+    '<p id="protein-goal-preview" style="font-size:13px; color:var(--ink-2); margin-bottom:12px;"></p>' +
+    '<div class="modal-actions">' +
+    '<button class="btn-secondary" onclick="closeModal()">취소</button>' +
+    '<button class="btn-primary" onclick="saveProteinGoal()">저장</button>' +
+    '</div>'
+  );
+  const upd = () => {
+    const w = parseFloat(document.getElementById('protein-weight').value);
+    const r = parseFloat(document.getElementById('protein-ratio').value);
+    document.getElementById('protein-goal-preview').textContent =
+      (isFinite(w) && w > 0 && isFinite(r) && r > 0) ? `하루 목표 ${Math.round(w * r)}g` : '';
+  };
+  document.getElementById('protein-weight').oninput = upd;
+  document.getElementById('protein-ratio').oninput = upd;
+  upd();
+}
+
+function pickRatio(btn) {
+  document.querySelectorAll('[data-group="proteinRatio"]').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  const input = document.getElementById('protein-ratio');
+  input.value = btn.dataset.val;
+  input.dispatchEvent(new Event('input'));
+}
+
+function saveProteinGoal() {
+  const w = parseFloat(document.getElementById('protein-weight').value);
+  const r = parseFloat(document.getElementById('protein-ratio').value);
+  if (!isFinite(w) || w <= 0) { alert('체중을 입력해주세요'); return; }
+  if (!isFinite(r) || r <= 0) { alert('계수를 입력해주세요'); return; }
+  localStorage.setItem('proteinWeight', String(w));
+  localStorage.setItem('proteinRatio', String(r));
+  closeModal();
+  updateProteinUI();
 }
 
 // ============ UI INTERACTIONS ============
@@ -735,6 +955,10 @@ async function saveEntry() {
     caffeine: caffeine,
     alcohol: alcohol,
     food: document.getElementById('food').value.trim(),
+    protein: proteinTouched() ? proteinTotal() : null,
+    proteinItems: { ...proteinItems },
+    proteinExtra: proteinExtra,
+    proteinGoal: proteinGoal(),
     weather: weatherForEntry,
     savedAt: new Date().toISOString()
   };
@@ -791,6 +1015,11 @@ function clearFormFields() {
   document.querySelectorAll('.tag.on').forEach(b => b.classList.remove('on'));
   selections = { exercise: null, work: null, sleepQuality: null, period: null };
   multiSel = { tags: [], selfCare: [], social: [], exerciseType: [] };
+  proteinItems = {};
+  proteinExtra = 0;
+  document.getElementById('protein-extra-val').textContent = 0;
+  syncProteinChips();
+  updateProteinUI();
 }
 
 function loadEntryIntoForm(entry) {
@@ -839,6 +1068,12 @@ function loadEntryIntoForm(entry) {
     const b = document.querySelector(`.tag[data-multi="social"][data-val="${v}"]`);
     if (b) { b.classList.add('on'); multiSel.social.push(v); }
   });
+  // 단백질 (옛 기록엔 없는 필드)
+  proteinItems = { ...(entry.proteinItems || {}) };
+  proteinExtra = entry.proteinExtra || 0;
+  document.getElementById('protein-extra-val').textContent = proteinExtra;
+  syncProteinChips();
+  updateProteinUI();
 }
 
 async function editSelectedDay() {
@@ -890,17 +1125,7 @@ function updateWeatherStripForEditing(entry, isToday) {
 
 // editingDate는 유지하면서 폼 필드만 비우기
 function resetFormFieldsOnly() {
-  document.getElementById('valence').value = 0;
-  document.getElementById('arousal').value = 0;
-  updateLabel('valence-out', 0, valenceLabel);
-  updateLabel('arousal-out', 0, arousalLabel);
-  document.getElementById('peak').value = '';
-  document.getElementById('gratitude').value = '';
-  document.getElementById('food').value = '';
-  caffeine = 0;
-  document.getElementById('caffeine-val').textContent = 0;
-  document.querySelectorAll('.opt.on').forEach(b => b.classList.remove('on'));
-  selections = { exercise: null, work: null };
+  clearFormFields();
 }
 
 function cancelEdit() {
@@ -1076,6 +1301,10 @@ function showDayDetail(day, entry) {
   if (entry.caffeine) ctx.push(`☕ ${entry.caffeine}잔`);
   if (entry.alcohol) ctx.push(`🍷 ${entry.alcohol}잔`);
   if (entry.food) ctx.push(`🍴 ${entry.food}`);
+  if (entry.protein != null) {
+    const g = entry.proteinGoal;
+    ctx.push(`🥩 ${entry.protein}g${g ? ` / ${g}g` : ''}${g && entry.protein >= g ? ' ✓' : ''}`);
+  }
   if (entry.weather) {
     const wi = weatherInterpret(entry.weather.code);
     ctx.push(`${wi.icon} ${entry.weather.temp}°C`);
@@ -1230,6 +1459,8 @@ function renderInsightCards(recent) {
       </div>`;
   }
 
+  html += renderProteinInsight(recent);
+
   // 감정 태그 인사이트
   const tagCounts = {};
   recent.forEach(e => (e.tags || []).forEach(t => { tagCounts[t] = (tagCounts[t] || 0) + 1; }));
@@ -1281,6 +1512,84 @@ function renderInsightCards(recent) {
   }
 
   return html;
+}
+
+// 단백질: 평균 / 목표 달성률 / 최근 14일 일일 트래킹 / 운동한 날 비교
+function renderProteinInsight(recent) {
+  const logged = recent.filter(e => e.protein != null);
+  if (logged.length < 3) return '';
+
+  const currentGoal = proteinGoal();
+  const goalOf = (e) => e.proteinGoal || currentGoal;
+  const avg = mean(logged.map(e => e.protein));
+  const withGoal = logged.filter(e => goalOf(e));
+  const hit = withGoal.filter(e => e.protein >= goalOf(e));
+  const hitPct = withGoal.length ? Math.round((hit.length / withGoal.length) * 100) : null;
+
+  // 최근 14일 막대
+  const byDate = {};
+  recent.forEach(e => { byDate[e.date] = e; });
+  const scaleMax = Math.max(currentGoal || 0, ...logged.map(e => e.protein), 1);
+  let bars = '', firstLabel = '', lastLabel = '';
+  const today = new Date();
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const k = dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+    if (i === 13) firstLabel = `${d.getMonth() + 1}/${d.getDate()}`;
+    if (i === 0) lastLabel = '오늘';
+    const e = byDate[k];
+    const g = e && e.protein != null ? e.protein : null;
+    if (g == null) {
+      bars += `<div class="mini-bar" style="height: 3px;" title="${k} · 기록 없음"></div>`;
+      continue;
+    }
+    const goal = (e.proteinGoal || currentGoal);
+    let color = 'var(--ink-3)';
+    if (goal && g >= goal) color = 'var(--success)';
+    else if (goal && g >= goal * 0.8) color = 'var(--warn)';
+    const h = Math.max(4, Math.round((g / scaleMax) * 100));
+    bars += `<div class="mini-bar" style="height: ${h}%; background: ${color};" title="${k} · ${g}g${goal ? ` / ${goal}g` : ''}"></div>`;
+  }
+
+  // 운동한 날 vs 안 한 날
+  const workoutDays = logged.filter(e => e.exercise && e.exercise !== 'none');
+  const restDays = logged.filter(e => e.exercise === 'none');
+  let compare = '';
+  if (workoutDays.length >= 2 && restDays.length >= 2) {
+    const wAvg = mean(workoutDays.map(e => e.protein));
+    const rAvg = mean(restDays.map(e => e.protein));
+    const diff = wAvg - rAvg;
+    const arrow = diff >= 0 ? '↑' : '↓';
+    compare = `<div class="detail-row"><span class="lbl">운동한 날 (${workoutDays.length}일)</span>평균 ${wAvg.toFixed(0)}g · 쉰 날보다 ${arrow} ${Math.abs(diff).toFixed(0)}g</div>`;
+  }
+
+  const goalLine = currentGoal
+    ? `목표 ${currentGoal}g 기준`
+    : '목표 미설정 — 기록 탭에서 체중을 넣으면 달성률이 나와요';
+
+  return `
+    <div class="card">
+      <p class="card-label">🥩 단백질</p>
+      <p class="card-hint">${logged.length}일 기록 · ${goalLine}</p>
+      <div class="stats-grid">
+        <div class="stat">
+          <div class="stat-label">하루 평균</div>
+          <div class="stat-val">${avg.toFixed(0)}<span style="font-size:14px; color:var(--ink-3);">g</span></div>
+          ${currentGoal ? `<div class="stat-sub">목표 대비 ${Math.round((avg / currentGoal) * 100)}%</div>` : ''}
+        </div>
+        ${hitPct != null ? `
+        <div class="stat">
+          <div class="stat-label">목표 달성</div>
+          <div class="stat-val" style="color: ${hitPct >= 70 ? 'var(--success)' : (hitPct >= 40 ? 'var(--warn)' : 'var(--accent)')}">${hit.length}<span style="font-size:14px; color:var(--ink-3);">/${withGoal.length}일</span></div>
+          <div class="stat-sub">${hitPct}% 달성</div>
+        </div>` : ''}
+      </div>
+      <p class="field-label" style="margin-top: 14px;">최근 14일</p>
+      <div class="mini-bars">${bars}</div>
+      <div class="mini-axis"><span>${firstLabel}</span><span>${lastLabel}</span></div>
+      ${compare}
+    </div>`;
 }
 
 function drawQuadChart(entries) {
@@ -1811,7 +2120,7 @@ async function exportData(format) {
 
   let content, filename, mime;
   if (format === 'csv') {
-    const headers = ['date','valence','arousal','tags','sleep_hours','sleep_quality','peak','gratitude','exercise','exercise_type','self_care','social','work','period','caffeine','alcohol','food','weather_code','weather_temp'];
+    const headers = ['date','valence','arousal','tags','sleep_hours','sleep_quality','peak','gratitude','exercise','exercise_type','self_care','social','work','period','caffeine','alcohol','food','protein','protein_goal','protein_items','weather_code','weather_temp'];
     const rows = [headers.join(',')];
     all.forEach(e => {
       const w = e.weather || {};
@@ -1827,7 +2136,11 @@ async function exportData(format) {
         csvEscape((e.social || []).join('|')),
         e.work || '', e.period || '',
         e.caffeine || 0, e.alcohol || 0,
-        csvEscape(e.food), w.code || '', w.temp || ''
+        csvEscape(e.food),
+        e.protein != null ? e.protein : '',
+        e.proteinGoal || '',
+        csvEscape(Object.entries(e.proteinItems || {}).map(([k, n]) => `${k}x${n}`).join('|')),
+        w.code || '', w.temp || ''
       ];
       rows.push(row.join(','));
     });
@@ -1965,6 +2278,8 @@ function updateGreeting() {
 
 async function init() {
   updateGreeting();
+  renderProteinGrid();
+  updateProteinUI();
   loadWeather();
   renderStreakAndSparkline();
   updateSyncSummary();
