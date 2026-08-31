@@ -564,6 +564,9 @@ let alcohol = 0;
 let sleepHours = null; // hours, in 0.5 step. null = unset
 let selections = { exercise: null, work: null, sleepQuality: null, period: null };
 let multiSel = { tags: [], selfCare: [], social: [], exerciseType: [] };
+// 앱 설정. 원본은 IndexedDB(settings 스토어), 여기는 동기 접근용 캐시.
+// localStorage에 두면 iOS가 임의로 비워버려서 설정이 날아간다.
+let appSettings = { proteinWeight: null, proteinRatio: 1.6, updatedAt: null };
 let proteinItems = {};  // { '계란': 2, '단백질 음료': 1 }
 let proteinExtra = 0;   // 프리셋에 없는 단백질 (g)
 let weatherData = null;
@@ -586,8 +589,9 @@ function formatDateLine(d) {
 
 // ============ INDEXEDDB ============
 const DB_NAME = 'mood-tracker';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE = 'entries';
+const SETTINGS_STORE = 'settings';
 let dbInstance = null;
 
 function openDB() {
@@ -595,10 +599,18 @@ function openDB() {
     if (dbInstance) return resolve(dbInstance);
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onerror = () => reject(req.error);
+    // 다른 탭이 옛 버전 DB를 붙잡고 있으면 업그레이드가 멈춘다. 조용히 멈추면 원인을 못 찾으니 알려준다.
+    req.onblocked = () => {
+      alert('다른 탭에서 이 앱이 열려 있어요. 그 탭을 닫고 새로고침해주세요.');
+    };
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: 'date' });
+      }
+      // v2: 설정 스토어. localStorage는 iOS가 임의로 비우기 때문에 설정도 IndexedDB에 둔다.
+      if (!db.objectStoreNames.contains(SETTINGS_STORE)) {
+        db.createObjectStore(SETTINGS_STORE, { keyPath: 'key' });
       }
     };
     req.onsuccess = () => { dbInstance = req.result; resolve(dbInstance); };
@@ -643,6 +655,26 @@ async function clearAllEntries() {
   });
 }
 
+async function getStoredSettings() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(SETTINGS_STORE, 'readonly');
+    const req = tx.objectStore(SETTINGS_STORE).get('app');
+    req.onsuccess = () => resolve(req.result ? req.result.value : null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function putStoredSettings(value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(SETTINGS_STORE, 'readwrite');
+    tx.objectStore(SETTINGS_STORE).put({ key: 'app', value: value });
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 // ============ PROTEIN ============
 // g = 1인분 기준 단백질 추정치. 정확한 영양성분표가 아니라 "대충 맞는" 값.
 const PROTEIN_PRESETS = [
@@ -669,9 +701,44 @@ const RATIO_PRESETS = [
 ];
 
 function proteinCfg() {
+  const w = parseFloat(appSettings.proteinWeight);
+  const r = parseFloat(appSettings.proteinRatio);
+  return { weight: isFinite(w) && w > 0 ? w : null, ratio: isFinite(r) && r > 0 ? r : 1.6 };
+}
+
+// 시작 시 1회. IndexedDB에 없으면 옛 localStorage 값을 이관한다.
+async function loadSettings() {
+  let stored = null;
+  try {
+    stored = await getStoredSettings();
+  } catch (e) {
+    console.log('settings load failed:', e);
+  }
+  if (stored) {
+    appSettings = Object.assign({}, appSettings, stored);
+    return;
+  }
   const w = parseFloat(localStorage.getItem('proteinWeight'));
   const r = parseFloat(localStorage.getItem('proteinRatio'));
-  return { weight: isFinite(w) && w > 0 ? w : null, ratio: isFinite(r) && r > 0 ? r : 1.6 };
+  if (isFinite(w) && w > 0) {
+    appSettings.proteinWeight = w;
+    if (isFinite(r) && r > 0) appSettings.proteinRatio = r;
+    appSettings.updatedAt = new Date().toISOString();
+    await persistSettings();
+  }
+}
+
+async function persistSettings() {
+  try {
+    await putStoredSettings(appSettings);
+  } catch (e) {
+    console.log('settings save failed:', e);
+  }
+  // localStorage에도 복사해두지만 이건 보조일 뿐. 원본은 IndexedDB.
+  try {
+    if (appSettings.proteinWeight) localStorage.setItem('proteinWeight', String(appSettings.proteinWeight));
+    if (appSettings.proteinRatio) localStorage.setItem('proteinRatio', String(appSettings.proteinRatio));
+  } catch (e) { /* 저장 공간 부족 등 — 무시 */ }
 }
 
 // 목표 g. 체중이 없으면 null (= 목표 미설정)
@@ -806,15 +873,18 @@ function pickRatio(btn) {
   input.dispatchEvent(new Event('input'));
 }
 
-function saveProteinGoal() {
+async function saveProteinGoal() {
   const w = parseFloat(document.getElementById('protein-weight').value);
   const r = parseFloat(document.getElementById('protein-ratio').value);
   if (!isFinite(w) || w <= 0) { alert('체중을 입력해주세요'); return; }
   if (!isFinite(r) || r <= 0) { alert('계수를 입력해주세요'); return; }
-  localStorage.setItem('proteinWeight', String(w));
-  localStorage.setItem('proteinRatio', String(r));
+  appSettings.proteinWeight = w;
+  appSettings.proteinRatio = r;
+  appSettings.updatedAt = new Date().toISOString();
+  await persistSettings();
   closeModal();
   updateProteinUI();
+  autoSync();
 }
 
 // ============ UI INTERACTIONS ============
@@ -1882,23 +1952,26 @@ function parseGistId(raw) {
   return m ? m[1] : '';
 }
 
-async function readRemoteEntries() {
+async function readRemote() {
   const gist = await gistFetch('/gists/' + syncCfg().gistId);
   const file = gist.files && gist.files[GIST_FILENAME];
-  if (!file) return [];
+  if (!file) return { entries: [], settings: null };
   let text = file.content;
   if (file.truncated || text == null) {
     const raw = await fetch(file.raw_url, { cache: 'no-store' });
     if (!raw.ok) throw new Error('원격 데이터를 읽지 못했어요');
     text = await raw.text();
   }
-  if (!text || !text.trim()) return [];
+  if (!text || !text.trim()) return { entries: [], settings: null };
   const data = JSON.parse(text);
-  return Array.isArray(data.entries) ? data.entries : [];
+  return {
+    entries: Array.isArray(data.entries) ? data.entries : [],
+    settings: (data.settings && typeof data.settings === 'object') ? data.settings : null
+  };
 }
 
-async function writeRemoteEntries(entries) {
-  const content = JSON.stringify({ exportedAt: new Date().toISOString(), entries: entries }, null, 2);
+async function writeRemote(entries, settings) {
+  const content = JSON.stringify({ exportedAt: new Date().toISOString(), entries: entries, settings: settings }, null, 2);
   const files = {};
   files[GIST_FILENAME] = { content: content };
   await gistFetch('/gists/' + syncCfg().gistId, {
@@ -1916,6 +1989,13 @@ function isNewerEntry(a, b) {
   return ta > tb;
 }
 
+// updatedAt 없는 쪽은 항상 지는 쪽 (isNewerEntry와 같은 규칙)
+function isNewerSettings(a, b) {
+  const ta = a && a.updatedAt ? Date.parse(a.updatedAt) : 0;
+  const tb = b && b.updatedAt ? Date.parse(b.updatedAt) : 0;
+  return ta > tb;
+}
+
 function entriesFingerprint(entries) {
   return entries.map(e => e.date + '|' + (e.savedAt || '')).join(',');
 }
@@ -1925,7 +2005,7 @@ async function syncNow() {
   if (!syncEnabled()) return null;
   if (syncInFlight) return syncInFlight;
   syncInFlight = (async () => {
-    const remote = await readRemoteEntries();
+    const { entries: remote, settings: remoteSettings } = await readRemote();
     const local = await getAllEntries();
     const byDate = {};
     local.forEach(e => { if (e && e.date) byDate[e.date] = e; });
@@ -1941,12 +2021,22 @@ async function syncNow() {
       }
     }
 
+    // 설정: updatedAt이 더 최근인 쪽이 이김 (기록과 같은 규칙)
+    let settingsPulled = false;
+    if (remoteSettings && isNewerSettings(remoteSettings, appSettings)) {
+      appSettings = Object.assign({}, appSettings, remoteSettings);
+      await persistSettings();
+      settingsPulled = true;
+    }
+
     const merged = Object.keys(byDate).sort().map(k => byDate[k]);
     const remoteSorted = remote.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    const pushed = entriesFingerprint(merged) !== entriesFingerprint(remoteSorted);
-    if (pushed) await writeRemoteEntries(merged);
+    const settingsDiffer = JSON.stringify(remoteSettings || null) !== JSON.stringify(appSettings);
+    const pushed = entriesFingerprint(merged) !== entriesFingerprint(remoteSorted) || settingsDiffer;
+    if (pushed) await writeRemote(merged, appSettings);
 
     localStorage.setItem('lastSyncAt', new Date().toISOString());
+    if (settingsPulled) updateProteinUI();
     if (pulled > 0) refreshCurrentView();
     updateSyncSummary();
     return { pulled: pulled, pushed: pushed, total: merged.length };
@@ -2042,7 +2132,7 @@ async function findOrCreateGist() {
   const all = await getAllEntries();
   all.sort((a, b) => a.date.localeCompare(b.date));
   const files = {};
-  files[GIST_FILENAME] = { content: JSON.stringify({ exportedAt: new Date().toISOString(), entries: all }, null, 2) };
+  files[GIST_FILENAME] = { content: JSON.stringify({ exportedAt: new Date().toISOString(), entries: all, settings: appSettings }, null, 2) };
   const created = await gistFetch('/gists', {
     method: 'POST',
     body: JSON.stringify({
@@ -2148,7 +2238,7 @@ async function exportData(format) {
     filename = `mood-tracker-${todayKey()}.csv`;
     mime = 'text/csv';
   } else {
-    content = JSON.stringify({ exportedAt: new Date().toISOString(), entries: all }, null, 2);
+    content = JSON.stringify({ exportedAt: new Date().toISOString(), entries: all, settings: appSettings }, null, 2);
     filename = `mood-tracker-${todayKey()}.json`;
     mime = 'application/json';
   }
@@ -2192,6 +2282,7 @@ async function importData(input) {
       </div>
     `);
     window._pendingImport = data.entries;
+    window._pendingImportSettings = (data.settings && typeof data.settings === 'object') ? data.settings : null;
   } catch (e) {
     alert('가져오기 실패: ' + e.message);
   }
@@ -2200,12 +2291,20 @@ async function importData(input) {
 
 async function confirmImport() {
   const entries = window._pendingImport;
+  const settings = window._pendingImportSettings;
   closeModal();
   for (const e of entries) {
     await putEntry(e);
   }
+  // 백업에 설정이 들어있고 지금 것보다 최신이면 같이 복구
+  if (settings && isNewerSettings(settings, appSettings)) {
+    appSettings = Object.assign({}, appSettings, settings);
+    await persistSettings();
+    updateProteinUI();
+  }
   alert(`${entries.length}개 복원 완료`);
   window._pendingImport = null;
+  window._pendingImportSettings = null;
   autoSync();
 }
 
@@ -2279,6 +2378,7 @@ function updateGreeting() {
 async function init() {
   updateGreeting();
   renderProteinGrid();
+  await loadSettings();
   updateProteinUI();
   loadWeather();
   renderStreakAndSparkline();
