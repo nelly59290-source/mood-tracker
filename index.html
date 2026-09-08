@@ -384,6 +384,16 @@
     </div>
 
     <div class="field">
+      <p class="field-label">평소와 다른 끼니 (외식·주말)</p>
+      <div class="btn-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <button class="opt" data-meal="light" onclick="cycleMeal(this)" ondblclick="clearMeal(this)">가볍게<br><span style="font-size:10px; color:var(--ink-3);">샐러드·면 ~15g</span></button>
+        <button class="opt" data-meal="normal" onclick="cycleMeal(this)" ondblclick="clearMeal(this)">보통<br><span style="font-size:10px; color:var(--ink-3);">한 끼답게 ~30g</span></button>
+        <button class="opt" data-meal="heavy" onclick="cycleMeal(this)" ondblclick="clearMeal(this)">든든하게<br><span style="font-size:10px; color:var(--ink-3);">고기·치킨 ~50g</span></button>
+      </div>
+      <input type="text" id="protein-note" placeholder="뭘 먹었는지 (예: 남친이랑 삼겹살, 브런치)" oninput="updateProteinUI()" style="margin-top: 8px;">
+    </div>
+
+    <div class="field">
       <p class="field-label">그 외 단백질 직접 추가 (g)</p>
       <div class="stepper">
         <button onclick="adjustProteinExtra(-5)">−</button>
@@ -568,6 +578,7 @@ let multiSel = { tags: [], selfCare: [], social: [], exerciseType: [] };
 // localStorage에 두면 iOS가 임의로 비워버려서 설정이 날아간다.
 let appSettings = { proteinWeight: null, proteinRatio: 1.6, updatedAt: null };
 let proteinItems = {};  // { '계란': 2, '단백질 음료': 1 }
+let proteinMeals = { light: 0, normal: 0, heavy: 0 };  // 외식 등 평소와 다른 끼니 (양으로 분류)
 let proteinExtra = 0;   // 프리셋에 없는 단백질 (g)
 let weatherData = null;
 let calMonth = new Date().getMonth();
@@ -694,6 +705,11 @@ const PROTEIN_PRESETS = [
 const PROTEIN_G = {};
 PROTEIN_PRESETS.forEach(p => { PROTEIN_G[p.name] = p.g; });
 
+// 외식은 메뉴가 매번 달라서 메뉴 대신 '양'으로 분류한다. 정확도보다 기록이 끊기지 않는 게 중요.
+const MEAL_G = { light: 15, normal: 30, heavy: 50 };
+const MEAL_LABEL = { light: '가볍게', normal: '보통', heavy: '든든하게' };
+const MEAL_HINT = { light: '샐러드·면 ~15g', normal: '한 끼답게 ~30g', heavy: '고기·치킨 ~50g' };
+
 const RATIO_PRESETS = [
   { val: 1.2, label: '유지', hint: '가볍게 움직이는 시기' },
   { val: 1.6, label: '근성장', hint: '주 3회 이상 운동' },
@@ -750,12 +766,46 @@ function proteinGoal() {
 function proteinTotal() {
   let sum = proteinExtra;
   Object.entries(proteinItems).forEach(([name, n]) => { sum += (PROTEIN_G[name] || 0) * n; });
+  Object.entries(proteinMeals).forEach(([size, n]) => { sum += (MEAL_G[size] || 0) * n; });
   return sum;
+}
+
+function proteinNoteValue() {
+  const el = document.getElementById('protein-note');
+  return el ? el.value.trim() : '';
+}
+
+// 외식 끼니를 쓰거나 메모를 남긴 날은 숫자가 추정치다. 나중에 분석할 때 구분하려고 표시해둔다.
+function proteinEstimated() {
+  return Object.values(proteinMeals).some(n => n > 0) || proteinNoteValue() !== '';
 }
 
 // 아무것도 안 만졌으면 "기록 안 함"으로 취급 (0g과 구분)
 function proteinTouched() {
-  return Object.keys(proteinItems).length > 0 || proteinExtra > 0;
+  return Object.keys(proteinItems).length > 0 || proteinExtra > 0 || proteinEstimated();
+}
+
+function cycleMeal(btn) {
+  const size = btn.dataset.meal;
+  proteinMeals[size] = (proteinMeals[size] + 1) % 6; // 0~5 순환
+  syncMealChips();
+  updateProteinUI();
+}
+
+function clearMeal(btn) {
+  proteinMeals[btn.dataset.meal] = 0;
+  syncMealChips();
+  updateProteinUI();
+}
+
+function syncMealChips() {
+  document.querySelectorAll('[data-meal]').forEach(b => {
+    const size = b.dataset.meal;
+    const n = proteinMeals[size] || 0;
+    b.classList.toggle('on', n > 0);
+    b.innerHTML = MEAL_LABEL[size] + (n > 1 ? ` ×${n}` : '') +
+      `<br><span style="font-size:10px; opacity:0.7;">${MEAL_HINT[size]}</span>`;
+  });
 }
 
 function renderProteinGrid() {
@@ -815,7 +865,7 @@ function proteinVerdict(total, goal) {
 function updateProteinUI() {
   const total = proteinTotal();
   const goal = proteinGoal();
-  document.getElementById('protein-total').textContent = total;
+  document.getElementById('protein-total').textContent = (proteinEstimated() ? '≈ ' : '') + total;
   const fill = document.getElementById('protein-fill');
   const status = document.getElementById('protein-status');
   const goalText = document.getElementById('protein-goal-text');
@@ -1027,7 +1077,10 @@ async function saveEntry() {
     food: document.getElementById('food').value.trim(),
     protein: proteinTouched() ? proteinTotal() : null,
     proteinItems: { ...proteinItems },
+    proteinMeals: { ...proteinMeals },
     proteinExtra: proteinExtra,
+    proteinNote: proteinNoteValue(),
+    proteinEstimated: proteinEstimated(),
     proteinGoal: proteinGoal(),
     weather: weatherForEntry,
     savedAt: new Date().toISOString()
@@ -1086,9 +1139,12 @@ function clearFormFields() {
   selections = { exercise: null, work: null, sleepQuality: null, period: null };
   multiSel = { tags: [], selfCare: [], social: [], exerciseType: [] };
   proteinItems = {};
+  proteinMeals = { light: 0, normal: 0, heavy: 0 };
   proteinExtra = 0;
   document.getElementById('protein-extra-val').textContent = 0;
+  document.getElementById('protein-note').value = '';
   syncProteinChips();
+  syncMealChips();
   updateProteinUI();
 }
 
@@ -1140,9 +1196,12 @@ function loadEntryIntoForm(entry) {
   });
   // 단백질 (옛 기록엔 없는 필드)
   proteinItems = { ...(entry.proteinItems || {}) };
+  proteinMeals = Object.assign({ light: 0, normal: 0, heavy: 0 }, entry.proteinMeals || {});
   proteinExtra = entry.proteinExtra || 0;
   document.getElementById('protein-extra-val').textContent = proteinExtra;
+  document.getElementById('protein-note').value = entry.proteinNote || '';
   syncProteinChips();
+  syncMealChips();
   updateProteinUI();
 }
 
@@ -1373,13 +1432,15 @@ function showDayDetail(day, entry) {
   if (entry.food) ctx.push(`🍴 ${entry.food}`);
   if (entry.protein != null) {
     const g = entry.proteinGoal;
-    ctx.push(`🥩 ${entry.protein}g${g ? ` / ${g}g` : ''}${g && entry.protein >= g ? ' ✓' : ''}`);
+    const approx = entry.proteinEstimated ? '≈' : '';
+    ctx.push(`🥩 ${approx}${entry.protein}g${g ? ` / ${g}g` : ''}${g && entry.protein >= g ? ' ✓' : ''}`);
   }
   if (entry.weather) {
     const wi = weatherInterpret(entry.weather.code);
     ctx.push(`${wi.icon} ${entry.weather.temp}°C`);
   }
   if (ctx.length) html += `<div class="detail-row"><span class="lbl">컨텍스트</span>${ctx.join(' · ')}</div>`;
+  if (entry.proteinNote) html += `<div class="detail-row"><span class="lbl">먹은 것</span>${escapeHtml(entry.proteinNote)}</div>`;
   body.innerHTML = html;
   editBtn.textContent = '이 날 기록 수정';
   editBtn.style.display = 'block';
@@ -1619,7 +1680,12 @@ function renderProteinInsight(recent) {
     if (goal && g >= goal) color = 'var(--success)';
     else if (goal && g >= goal * 0.8) color = 'var(--warn)';
     const h = Math.max(4, Math.round((g / scaleMax) * 100));
-    bars += `<div class="mini-bar" style="height: ${h}%; background: ${color};" title="${k} · ${g}g${goal ? ` / ${goal}g` : ''}"></div>`;
+    // 추정치인 날은 빗금으로 구분 (외식 등 정확하지 않은 날)
+    const bg = e.proteinEstimated
+      ? `repeating-linear-gradient(45deg, ${color}, ${color} 3px, transparent 3px, transparent 6px)`
+      : color;
+    const note = e.proteinEstimated ? ` (추정${e.proteinNote ? ' · ' + e.proteinNote : ''})` : '';
+    bars += `<div class="mini-bar" style="height: ${h}%; background: ${bg};" title="${k} · ${g}g${goal ? ` / ${goal}g` : ''}${note}"></div>`;
   }
 
   // 운동한 날 vs 안 한 날
@@ -1634,14 +1700,19 @@ function renderProteinInsight(recent) {
     compare = `<div class="detail-row"><span class="lbl">운동한 날 (${workoutDays.length}일)</span>평균 ${wAvg.toFixed(0)}g · 쉰 날보다 ${arrow} ${Math.abs(diff).toFixed(0)}g</div>`;
   }
 
+  const estimated = logged.filter(e => e.proteinEstimated);
   const goalLine = currentGoal
     ? `목표 ${currentGoal}g 기준`
     : '목표 미설정 — 기록 탭에서 체중을 넣으면 달성률이 나와요';
+  const estLine = estimated.length
+    ? `<p class="card-hint" style="margin-top:-8px;">빗금 친 ${estimated.length}일은 외식 등 추정치예요</p>`
+    : '';
 
   return `
     <div class="card">
       <p class="card-label">🥩 단백질</p>
       <p class="card-hint">${logged.length}일 기록 · ${goalLine}</p>
+      ${estLine}
       <div class="stats-grid">
         <div class="stat">
           <div class="stat-label">하루 평균</div>
@@ -2210,7 +2281,7 @@ async function exportData(format) {
 
   let content, filename, mime;
   if (format === 'csv') {
-    const headers = ['date','valence','arousal','tags','sleep_hours','sleep_quality','peak','gratitude','exercise','exercise_type','self_care','social','work','period','caffeine','alcohol','food','protein','protein_goal','protein_items','weather_code','weather_temp'];
+    const headers = ['date','valence','arousal','tags','sleep_hours','sleep_quality','peak','gratitude','exercise','exercise_type','self_care','social','work','period','caffeine','alcohol','food','protein','protein_goal','protein_items','protein_meals','protein_note','protein_estimated','weather_code','weather_temp'];
     const rows = [headers.join(',')];
     all.forEach(e => {
       const w = e.weather || {};
@@ -2230,6 +2301,9 @@ async function exportData(format) {
         e.protein != null ? e.protein : '',
         e.proteinGoal || '',
         csvEscape(Object.entries(e.proteinItems || {}).map(([k, n]) => `${k}x${n}`).join('|')),
+        csvEscape(Object.entries(e.proteinMeals || {}).filter(([_, n]) => n > 0).map(([k, n]) => `${k}x${n}`).join('|')),
+        csvEscape(e.proteinNote),
+        e.protein != null ? (e.proteinEstimated ? 1 : 0) : '',
         w.code || '', w.temp || ''
       ];
       rows.push(row.join(','));
@@ -2378,6 +2452,7 @@ function updateGreeting() {
 async function init() {
   updateGreeting();
   renderProteinGrid();
+  syncMealChips();
   await loadSettings();
   updateProteinUI();
   loadWeather();
