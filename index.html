@@ -93,7 +93,8 @@
     transition: border-color 0.15s; resize: none;
   }
   textarea:focus, input[type="text"]:focus, input[type="password"]:focus { border-color: var(--ink-3); outline: none; background: var(--bg); }
-  textarea { min-height: 56px; }
+  /* 4줄이 보이도록: 줄높이를 고정해두고 (줄높이 × 4 + 상하 패딩 + 테두리)로 계산 */
+  textarea { line-height: 1.5; min-height: calc(1.5em * 4 + 20px + 2px); }
   textarea::placeholder, input::placeholder { color: var(--ink-3); }
 
   /* Buttons grid */
