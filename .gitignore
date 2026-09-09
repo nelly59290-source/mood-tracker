@@ -3,3 +3,7 @@ CLAUDE.md
 .DS_Store
 .vscode/
 *.log
+
+# 운동 기록 (로컬 전용 — 다른 회원 이름 포함)
+workout-log/
+백업본/
