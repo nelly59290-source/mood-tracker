@@ -421,7 +421,7 @@
     </div>
 
     <div class="field">
-      <p class="field-label">평소와 다른 끼니 (외식·주말)</p>
+      <p class="field-label">외식한 끼니 <span style="color: var(--ink-3); font-weight: 400;">— 메뉴를 모를 때만. 집밥·회사밥은 위 칩으로</span></p>
       <div class="btn-grid" style="grid-template-columns: repeat(3, 1fr);">
         <button class="opt" data-meal="light" onclick="cycleMeal(this)" ondblclick="clearMeal(this)">가볍게<br><span style="font-size:10px; color:var(--ink-3);">샐러드·면 ~15g</span></button>
         <button class="opt" data-meal="normal" onclick="cycleMeal(this)" ondblclick="clearMeal(this)">보통<br><span style="font-size:10px; color:var(--ink-3);">한 끼답게 ~30g</span></button>
@@ -701,7 +701,7 @@ let multiSel = { tags: [], selfCare: [], social: [], exerciseType: [] };
 // localStorage에 두면 iOS가 임의로 비워버려서 설정이 날아간다.
 let appSettings = { proteinWeight: null, proteinRatio: 1.6, updatedAt: null };
 let proteinItems = {};  // { '계란': 2, '단백질 음료': 1 }
-let proteinMeals = { light: 0, normal: 0, heavy: 0 };  // 외식 등 평소와 다른 끼니 (양으로 분류)
+let proteinMeals = { light: 0, normal: 0, heavy: 0 };  // 메뉴를 모르는 외식 끼니 (양으로 분류)
 let proteinExtra = 0;   // 프리셋에 없는 단백질 (g)
 let weatherData = null;
 let calMonth = new Date().getMonth();
@@ -815,6 +815,7 @@ const PROTEIN_PRESETS = [
   { name: '선식',       unit: '1잔',   g: 16 },
   { name: '계란',       unit: '1개',   g: 6 },
   { name: '회사밥',     unit: '한 끼', g: 25 },
+  { name: '집밥',       unit: '한 끼', g: 25 },
   { name: '단백질 음료', unit: '1병',   g: 20 },
   { name: '그릭요거트',  unit: '1개',   g: 10 },
   { name: '프로틴 파우더', unit: '1스쿱', g: 24 },
@@ -900,7 +901,9 @@ function proteinNoteValue() {
 
 // 외식 끼니를 쓰거나 메모를 남긴 날은 숫자가 추정치다. 나중에 분석할 때 구분하려고 표시해둔다.
 function proteinEstimated() {
-  return Object.values(proteinMeals).some(n => n > 0) || proteinNoteValue() !== '';
+  // 끼니를 '양'으로 어림한 날만 추정치다.
+  // 예전엔 메모를 남기기만 해도 추정치로 쳤는데, 메모는 기록의 정확도와 상관이 없다.
+  return Object.values(proteinMeals).some(n => n > 0);
 }
 
 // 아무것도 안 만졌으면 "기록 안 함"으로 취급 (0g과 구분)
@@ -2559,7 +2562,7 @@ function renderProteinInsight(recent) {
     ? `목표 ${currentGoal}g 기준`
     : '목표 미설정 — 기록 탭에서 체중을 넣으면 달성률이 나와요';
   const estLine = estimated.length
-    ? `<p class="card-hint" style="margin-top:-8px;">빗금 친 ${estimated.length}일은 외식 등 추정치예요</p>`
+    ? `<p class="card-hint" style="margin-top:-8px;">빗금 친 ${estimated.length}일은 끼니를 양으로 어림한 날이에요</p>`
     : '';
 
   return `
