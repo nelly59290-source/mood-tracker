@@ -84,8 +84,13 @@
   /* Workout inputs */
   .wo-input { width: 100%; box-sizing: border-box; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; font-size: 13px; font-family: var(--sans); color: var(--ink); }
   .wo-input::placeholder { color: var(--ink-3); }
+  .wo-mv-cols { display: flex; gap: 6px; align-items: center; margin-bottom: 4px; font-size: 10px; letter-spacing: 0.04em; color: var(--ink-3); }
+  .wo-mv-cols .c-reps { width: 46px; flex: none; text-align: center; }
+  .wo-mv-cols .c-name { flex: 1; min-width: 0; padding-left: 2px; }
+  .wo-mv-cols .c-rxw { width: 74px; flex: none; padding-left: 2px; }
+  .wo-mv-cols .c-del { width: 32px; flex: none; }
   .wo-mv-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
-  .wo-mv-row input.wo-reps { width: 46px; flex: none; text-align: center; padding-left: 6px; padding-right: 6px; }
+  .wo-mv-row input.wo-reps-in { width: 46px; flex: none; text-align: center; padding-left: 6px; padding-right: 6px; }
   .wo-mv-row input.wo-name { flex: 1; min-width: 0; }
   .wo-mv-row input.wo-rxw { width: 74px; flex: none; padding-left: 8px; padding-right: 8px; }
   .wo-mv-row button { flex: none; background: transparent; border: 1px solid var(--line); color: var(--ink-3); width: 32px; height: 36px; border-radius: 8px; cursor: pointer; font-size: 15px; line-height: 1; }
@@ -1401,7 +1406,7 @@ function addPiece(piece) {
       <p class="card-label" style="margin: 0;">🔥 종목 <span class="wo-piece-no">${idx}</span></p>
       <button type="button" class="wo-piece-del" style="background: transparent; border: 1px solid var(--line); color: var(--ink-3); padding: 5px 10px; border-radius: 8px; font-size: 11px; font-family: var(--sans); cursor: pointer;">삭제</button>
     </div>
-    <p class="card-hint">화이트보드에 적힌 그대로</p>
+    <p class="card-hint">사진에서 채워진 건 그대로 두세요. <strong>확인할 건 아래 '내 기록'뿐</strong>이에요.</p>
 
     <div class="field">
       <p class="field-label">형식 · 라운드</p>
@@ -1414,13 +1419,19 @@ function addPiece(piece) {
     </div>
 
     <div class="field">
-      <p class="field-label">동작</p>
+      <p class="field-label">동작 <span style="color: var(--ink-3); font-weight: 400;">— 화이트보드에 적힌 그대로</span></p>
+      <div class="wo-mv-cols">
+        <span class="c-reps">횟수</span>
+        <span class="c-name">동작 이름</span>
+        <span class="c-rxw">처방 중량</span>
+        <span class="c-del"></span>
+      </div>
       <div class="wo-moves"></div>
       <button type="button" class="wo-add-move" style="margin-top: 8px; background: transparent; border: 1px dashed var(--line); color: var(--ink-2); padding: 9px; border-radius: 9px; font-size: 12px; font-family: var(--sans); cursor: pointer; width: 100%;">+ 동작 추가</button>
     </div>
 
     <div class="field">
-      <p class="field-label">기록</p>
+      <p class="field-label">내 기록 <span style="color: var(--accent); font-weight: 400;">— 여기만 확인하세요</span></p>
       <div style="display: flex; gap: 8px;">
         <input type="text" class="wo-input wo-time" placeholder="시간 18:50" inputmode="numeric" style="flex: 1;">
         <input type="text" class="wo-input wo-reps" placeholder="렙 668" inputmode="numeric" style="flex: 1;">
@@ -1429,7 +1440,7 @@ function addPiece(piece) {
     </div>
 
     <div class="field" style="margin-bottom: 0;">
-      <p class="field-label">사용 중량 · 스케일링</p>
+      <p class="field-label">내가 든 중량 · 스케일링 <span style="color: var(--ink-3); font-weight: 400;">— 위 처방 중량과 다름</span></p>
       <div style="display: flex; gap: 8px;">
         <input type="text" class="wo-input wo-weight" placeholder="105" inputmode="decimal" style="flex: 1;">
         <select class="wo-input wo-unit" style="flex: 1;"><option value="lb">lb</option><option value="kg">kg</option></select>
@@ -1841,7 +1852,7 @@ async function onPhotoPicked(input) {
     if (!norm.pieces.length) bits.push('종목을 못 읽었어요 — 직접 채워주세요');
     if (w.confidence === 'low') bits.push('확신이 낮아요, 숫자를 확인해주세요');
     if (Array.isArray(w.unreadable) && w.unreadable.length) bits.push('못 읽음: ' + w.unreadable.join(', '));
-    bits.push('RPE 찍고 저장하세요');
+    bits.push('시간·중량이 맞는지 보고 RPE 찍은 뒤 저장하세요');
     setPhotoMsg(bits.join(' · '), w.confidence === 'low' || !norm.pieces.length);
     document.getElementById('wo-pieces').scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
