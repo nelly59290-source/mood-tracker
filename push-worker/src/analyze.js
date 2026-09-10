@@ -79,10 +79,11 @@ const PROMPT = `크로스핏 박스(Fox Gym)의 화이트보드 사진이다. "�
 async function callGemini(env, base64, mime) {
   const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // 키는 헤더로 보낸다. URL 쿼리에 넣으면 로그·리퍼러에 남을 수 있다.
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
       body: JSON.stringify({
         contents: [{ parts: [{ text: PROMPT }, { inline_data: { mime_type: mime, data: base64 } }] }],
         generationConfig: { responseMimeType: 'application/json', temperature: 0 }
@@ -160,6 +161,16 @@ export async function handleAnalyze(body, env) {
   }
 
   const provider = env.AI_PROVIDER || 'gemini';
+
+  // wrangler secret put 에서 값을 안 넣고 Enter만 눌러도 secret 자체는 생성된다.
+  // 그러면 구글이 "unregistered callers"라는 알기 힘든 403을 준다. 여기서 미리 잡는다.
+  const key = provider === 'anthropic' ? env.ANTHROPIC_API_KEY : env.GEMINI_API_KEY;
+  if (!key || !key.trim()) {
+    return { status: 503, payload: {
+      error: `사진 분석 키가 비어 있어요. 터미널에서 다시 넣어주세요:  npx wrangler secret put ${provider === 'anthropic' ? 'ANTHROPIC_API_KEY' : 'GEMINI_API_KEY'}`
+    } };
+  }
+
   try {
     const text = provider === 'anthropic'
       ? await callAnthropic(env, body.image, mime)

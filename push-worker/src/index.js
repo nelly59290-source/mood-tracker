@@ -108,7 +108,15 @@ export default {
 
     if (url.pathname === '/health') {
       const list = await env.SUBS.list({ prefix: 'sub:' });
-      return json({ ok: true, subscriptions: list.keys.length }, 200, origin);
+      const provider = env.AI_PROVIDER || 'gemini';
+      const aiKey = provider === 'anthropic' ? env.ANTHROPIC_API_KEY : env.GEMINI_API_KEY;
+      return json({
+        ok: true,
+        subscriptions: list.keys.length,
+        aiProvider: provider,
+        // 값은 절대 내보내지 않는다. 채워졌는지만 알려준다.
+        aiKeySet: !!(aiKey && aiKey.trim())
+      }, 200, origin);
     }
 
     if (request.method !== 'POST') {
