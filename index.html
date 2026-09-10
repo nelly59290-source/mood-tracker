@@ -547,8 +547,17 @@
   </div>
 
   <div class="card">
-    <p class="card-label">📋 사진에서 옮겨 담기</p>
-    <p class="card-hint">화이트보드 사진을 Claude에게 보내면 JSON을 받습니다. 여기 붙여넣고 채우기를 누르세요. 여러 날짜를 한 번에 넣을 수도 있어요.</p>
+    <p class="card-label">📷 사진에서 자동으로 채우기</p>
+    <p class="card-hint">화이트보드를 찍으면 촬영 날짜까지 알아서 읽습니다. 사진은 저장되지 않아요.</p>
+    <input type="file" id="wo-photo" accept="image/*" style="display: none;" onchange="onPhotoPicked(this)">
+    <button id="wo-photo-btn" onclick="document.getElementById('wo-photo').click()"
+            style="width: 100%; background: var(--ink); color: var(--bg); border: none; padding: 13px; border-radius: 10px; font-size: 14px; font-family: var(--sans); cursor: pointer;">사진 고르기</button>
+    <p id="wo-photo-msg" style="font-size: 12px; margin: 10px 0 0; min-height: 16px; line-height: 1.5;"></p>
+  </div>
+
+  <details class="card" style="padding: 14px 20px;">
+    <summary style="font-size: 13px; font-weight: 500; color: var(--ink); cursor: pointer; list-style: none;">📋 JSON 붙여넣기</summary>
+    <p class="card-hint" style="margin-top: 12px;">사진이 잘 안 읽히거나 밀린 기록을 몰아서 넣을 때 씁니다. 여러 날짜를 한 번에 넣을 수 있어요.</p>
     <textarea id="wo-paste" rows="3" placeholder='{"date":"2026-09-08","wod":{...}} 또는 [ {...}, {...} ]'
               style="width: 100%; box-sizing: border-box; background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); resize: vertical;"></textarea>
     <div style="display: flex; gap: 8px; margin-top: 10px;">
@@ -556,7 +565,7 @@
       <button onclick="document.getElementById('wo-paste').value=''; setWoPasteMsg('');" style="background: transparent; border: 1px solid var(--line); color: var(--ink-2); padding: 10px 14px; border-radius: 9px; font-size: 13px; font-family: var(--sans); cursor: pointer;">지우기</button>
     </div>
     <p id="wo-paste-msg" style="font-size: 12px; margin: 8px 0 0; min-height: 16px;"></p>
-  </div>
+  </details>
 
   <div class="card">
     <p class="card-label">🏋️ 스트렝스</p>
@@ -1709,6 +1718,141 @@ async function applyWorkoutPaste() {
   setWoPasteMsg(`${saved}일 저장됨${skipped ? ` · ${skipped}건은 날짜가 없어 건너뜀` : ''}`);
   await refreshWorkoutScreen(woDate);
   autoSync();
+}
+
+/* ---------- 사진에서 자동으로 채우기 ----------
+   앱은 사진을 저장하지 않는다. Worker로 보내서 JSON만 받고 파일은 버린다.
+   촬영 날짜는 EXIF에서 직접 읽는다 — 파일 수정일은 사진앱을 거치며 바뀌어서 못 믿는다. */
+
+// EXIF DateTimeOriginal(0x9003)만 뽑는 최소 파서. 라이브러리를 안 쓰는 프로젝트라 직접 읽는다.
+function readExifDate(buf) {
+  const d = new DataView(buf);
+  if (d.byteLength < 4 || d.getUint16(0) !== 0xFFD8) return null;   // SOI 아니면 JPEG 아님
+  let off = 2;
+  while (off + 4 <= d.byteLength) {
+    if (d.getUint8(off) !== 0xFF) return null;
+    const marker = d.getUint8(off + 1);
+    if (marker === 0xDA || marker === 0xD9) return null;             // 이미지 데이터 시작
+    const len = d.getUint16(off + 2);
+    if (marker === 0xE1) {
+      const start = off + 4;
+      // "Exif\0\0"
+      if (d.getUint32(start) === 0x45786966 && d.getUint16(start + 4) === 0) {
+        const tiff = start + 6;
+        const be = d.getUint16(tiff) === 0x4D4D;
+        const u16 = (p) => d.getUint16(p, !be);
+        const u32 = (p) => d.getUint32(p, !be);
+        const readIfd = (ifdOff, wantExifPtr) => {
+          const n = u16(ifdOff);
+          for (let i = 0; i < n; i++) {
+            const p = ifdOff + 2 + i * 12;
+            const tag = u16(p);
+            if (wantExifPtr && tag === 0x8769) return tiff + u32(p + 8);
+            if (!wantExifPtr && tag === 0x9003) {
+              const cnt = u32(p + 4);
+              const vo = tiff + u32(p + 8);
+              let s = '';
+              for (let k = 0; k < cnt && vo + k < d.byteLength; k++) {
+                const c = d.getUint8(vo + k);
+                if (c === 0) break;
+                s += String.fromCharCode(c);
+              }
+              return s;                                             // "2026:09:09 19:16:03"
+            }
+          }
+          return null;
+        };
+        const exifIfd = readIfd(tiff + u32(tiff + 4), true);
+        if (exifIfd) {
+          const raw = readIfd(exifIfd, false);
+          const m = raw && raw.match(/^(\d{4}):(\d{2}):(\d{2})/);
+          if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+        }
+      }
+    }
+    off += 2 + len;
+  }
+  return null;
+}
+
+// 원본은 5712x4284 · 3MB쯤 된다. 글씨는 살리면서 업로드를 줄인다.
+function downscaleToBase64(file, maxEdge) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      c.getContext('2d').drawImage(img, 0, 0, w, h);
+      const dataUrl = c.toDataURL('image/jpeg', 0.88);
+      resolve(dataUrl.slice(dataUrl.indexOf(',') + 1));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('사진을 열지 못했어요')); };
+    img.src = url;
+  });
+}
+
+function setPhotoMsg(msg, isError) {
+  const el = document.getElementById('wo-photo-msg');
+  el.textContent = msg || '';
+  el.style.color = isError ? '#C0563F' : 'var(--accent)';
+}
+
+async function onPhotoPicked(input) {
+  const file = input.files && input.files[0];
+  input.value = '';                                   // 같은 사진을 다시 골라도 이벤트가 뜨게
+  if (!file) return;
+
+  const btn = document.getElementById('wo-photo-btn');
+  btn.disabled = true;
+  setPhotoMsg('사진 읽는 중…');
+
+  try {
+    const buf = await file.arrayBuffer();
+    const shotDate = readExifDate(buf);
+
+    setPhotoMsg('분석 중… (10초쯤 걸려요)');
+    const base64 = await downscaleToBase64(file, 2048);
+
+    const res = await fetch(pushApi() + '/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64, mime: 'image/jpeg' })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `서버 오류 ${res.status}`);
+
+    const w = data.workout || {};
+    const targetDate = shotDate || woDate;
+    await refreshWorkoutScreen(targetDate);
+
+    // 이미 찍어둔 RPE/메모는 살린다 (붙여넣기와 같은 규칙)
+    const existing = await getEntry(targetDate);
+    const norm = normalizeWorkout(w);
+    if (norm.rpe == null && existing?.workout?.rpe != null) norm.rpe = existing.workout.rpe;
+    if (!norm.note && existing?.workout?.note) norm.note = existing.workout.note;
+    loadWorkoutIntoForm(norm);
+
+    const bits = [];
+    bits.push(shotDate ? `${shotDate} 사진` : '촬영 날짜를 못 읽어서 화면의 날짜를 씁니다');
+    if (!norm.pieces.length) bits.push('종목을 못 읽었어요 — 직접 채워주세요');
+    if (w.confidence === 'low') bits.push('확신이 낮아요, 숫자를 확인해주세요');
+    if (Array.isArray(w.unreadable) && w.unreadable.length) bits.push('못 읽음: ' + w.unreadable.join(', '));
+    bits.push('RPE 찍고 저장하세요');
+    setPhotoMsg(bits.join(' · '), w.confidence === 'low' || !norm.pieces.length);
+    document.getElementById('wo-pieces').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    // fetch 실패는 'Failed to fetch' 같은 원문이 그대로 나온다. 사람이 읽을 말로 바꾼다.
+    const msg = /fetch|network|Load failed/i.test(e.message)
+      ? '서버에 연결하지 못했어요. 인터넷을 확인하고 다시 시도해 주세요.'
+      : e.message;
+    setPhotoMsg(msg, true);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // 붙여넣은 객체를 앱 내부 형태로 정규화. 사람이 손으로 고친 값도 받아준다.

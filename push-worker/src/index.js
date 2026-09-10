@@ -2,10 +2,12 @@
 // - POST /subscribe   구독 등록 (앱에서 알림 켤 때)
 // - POST /unsubscribe 구독 해제
 // - POST /test        지금 바로 한 번 보내보기
+// - POST /analyze     화이트보드 사진 → 운동기록 JSON
 // - GET  /health      상태 확인
 // - cron              매일 20:00 KST (= 11:00 UTC) 전체 발송
 
 import { sendPushNotification, deserializeVapidKeys } from 'web-push-browser';
+import { handleAnalyze } from './analyze.js';
 
 // 이 Worker는 인증이 없다. 공개 앱이라 클라이언트에 숨길 비밀이 없기 때문.
 // 대신 구독 수를 막아둬서 아무나 대량 등록하지 못하게 한다.
@@ -140,6 +142,11 @@ export default {
         label: typeof body.label === 'string' ? body.label.slice(0, 40) : ''
       }));
       return json({ ok: true }, 200, origin);
+    }
+
+    if (url.pathname === '/analyze') {
+      const { status, payload } = await handleAnalyze(body, env);
+      return json(payload, status, origin);
     }
 
     if (url.pathname === '/unsubscribe') {
