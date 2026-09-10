@@ -13,8 +13,9 @@ VAPID_PUBLIC_KEY = "BLOYnpEHpH7raOxMsiDc9ka3QtyfTaa-YcP16J1aqrvSWpkZosBvFhXXwOHp
 # 사진 분석 제공자. 무료 한도가 없어지거나 품질이 아쉬우면 "anthropic"으로 바꾸고
 # ANTHROPIC_API_KEY secret을 넣으면 된다. 앱은 건드릴 필요 없다.
 AI_PROVIDER = "gemini"
-# 모델명이 바뀌어 404가 나면 여기만 고친다.
-GEMINI_MODEL = "gemini-3.5-flash-lite"
+# 성능 좋은 순으로. 무료 한도(모델당 하루 20회)가 차면 자동으로 다음 모델로 내려간다.
+# 모델명이 바뀌어 404가 나면 GET /models 로 목록을 보고 여기만 고친다.
+GEMINI_MODELS = "gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite"
 
 # 아래 둘은 secret으로 넣는다 (공개 저장소라 파일에 두지 않는다):
 #   npx wrangler secret put VAPID_PRIVATE_KEY

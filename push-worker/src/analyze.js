@@ -76,8 +76,7 @@ const PROMPT = `크로스핏 박스(Fox Gym)의 화이트보드 사진이다. "�
 그럴듯한 숫자를 지어내지 마라. 못 읽은 건 사람이 채우면 된다.
 나현의 행 자체를 못 찾으면 confidence를 "low"로 하고 unreadable에 그렇게 적어라.`;
 
-async function callGemini(env, base64, mime) {
-  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+async function callGemini(env, base64, mime, model) {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
@@ -125,6 +124,22 @@ async function callAnthropic(env, base64, mime) {
   return text;
 }
 
+// 무료 한도는 모델당 하루 20회로 따로 잡힌다. 그래서 한도가 차면 다음 모델로 내려가면 그날 다시 쓸 수 있다.
+// 성능 좋은 순으로 나열하고, 위에서부터 쓴다.
+function modelChain(env) {
+  return (env.GEMINI_MODELS || 'gemini-3.8-flash,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-3.5-flash-lite,gemini-3.1-flash-lite')
+    .split(',').map(m => m.trim()).filter(Boolean);
+}
+
+function isQuotaExceeded(msg) {
+  return /\b429\b|exceeded your current quota|RESOURCE_EXHAUSTED/i.test(msg);
+}
+
+// 한도가 찬 모델을 매번 다시 찔러보면 시간만 버린다. 오늘 어디까지 내려왔는지 기억한다.
+function modelCursorKey() {
+  return `model:idx:${new Date().toISOString().slice(0, 10)}`;
+}
+
 // Worker는 요청마다 다른 데이터센터에서 실행된다. 그중 일부는 구글이 막아둔 지역이라
 // 같은 요청이 어떤 때는 되고 어떤 때는 "User location is not supported"로 튕긴다.
 // 지역 문제는 재시도하면 대개 다른 경로로 나가서 통과한다.
@@ -155,8 +170,9 @@ function parseModelJson(text) {
 }
 
 // 이 Worker는 인증이 없다. 엔드포인트가 알려져도 피해가 한도 안에서 멈추도록 하루 상한을 둔다.
-// 구글 무료 한도가 모델당 하루 20회라 그보다 낮게 잡는다. 여기서 먼저 막으면 구글 호출 자체를 아낀다.
-const DAILY_LIMIT = 18;
+// 모델 폴백 체인이 있어서 구글 쪽 여유는 (모델 수 x 20)회다. 여기서 그보다 낮게 막으면 그 여유를 못 쓴다.
+// 남용을 막는 게 목적이지 정상 사용을 막는 게 아니므로 넉넉히 둔다. 실사용은 하루 한두 장.
+const DAILY_LIMIT = 60;
 
 async function checkRateLimit(env) {
   const key = `rl:analyze:${new Date().toISOString().slice(0, 10)}`;
@@ -194,17 +210,37 @@ export async function handleAnalyze(body, env) {
   }
 
   try {
-    const text = provider === 'anthropic'
-      ? await callAnthropic(env, body.image, mime)
-      : await withGeoRetry(() => callGemini(env, body.image, mime));
+    let text, usedModel = null;
+    if (provider === 'anthropic') {
+      text = await callAnthropic(env, body.image, mime);
+    } else {
+      const chain = modelChain(env);
+      let idx = parseInt((await env.SUBS.get(modelCursorKey())) || '0', 10);
+      if (!(idx >= 0 && idx < chain.length)) idx = 0;
+      let lastErr;
+      for (; idx < chain.length; idx++) {
+        try {
+          text = await withGeoRetry(() => callGemini(env, body.image, mime, chain[idx]));
+          usedModel = chain[idx];
+          break;
+        } catch (err) {
+          lastErr = err;
+          if (!isQuotaExceeded(err.message)) throw err;      // 한도 문제가 아니면 내려가봐야 소용없다
+          // 이 모델은 오늘 끝났다. 다음 요청부터 건너뛰도록 기억한다.
+          await env.SUBS.put(modelCursorKey(), String(idx + 1), { expirationTtl: 172800 });
+          console.log('quota exhausted, falling back from', chain[idx]);
+        }
+      }
+      if (!text) throw lastErr || new Error('사용할 수 있는 모델이 없어요');
+    }
     const parsed = parseModelJson(text);
     if (!Array.isArray(parsed.pieces)) parsed.pieces = [];
-    return { status: 200, payload: { ok: true, provider, workout: parsed } };
+    return { status: 200, payload: { ok: true, provider, model: usedModel, workout: parsed } };
   } catch (e) {
     console.log('analyze failed', e.message);
     if (/\b429\b|exceeded your current quota|RESOURCE_EXHAUSTED/i.test(e.message)) {
       return { status: 429, payload: {
-        error: '구글 무료 한도(모델당 하루 20회)를 다 썼어요. 내일 다시 되고, 급하면 아래 JSON 붙여넣기를 쓰세요.'
+        error: '오늘 쓸 수 있는 모델을 전부 다 썼어요. 내일 다시 되고, 급하면 아래 JSON 붙여넣기를 쓰세요.'
       } };
     }
     if (isGeoBlocked(e.message)) {
@@ -214,4 +250,18 @@ export async function handleAnalyze(body, env) {
     }
     return { status: 502, payload: { error: '사진을 읽지 못했어요: ' + e.message } };
   }
+}
+
+// 오늘 어떤 모델을 쓰고 있고 한도를 얼마나 썼는지. 막혔을 때 제일 먼저 볼 값들.
+export async function aiStatus(env) {
+  const chain = modelChain(env);
+  let idx = parseInt((await env.SUBS.get(modelCursorKey())) || '0', 10);
+  if (!(idx >= 0 && idx < chain.length)) idx = 0;
+  const used = parseInt((await env.SUBS.get(`rl:analyze:${new Date().toISOString().slice(0, 10)}`)) || '0', 10);
+  return {
+    model: chain[idx] || null,
+    modelsLeft: Math.max(0, chain.length - idx),
+    usedToday: used,
+    dailyLimit: DAILY_LIMIT
+  };
 }

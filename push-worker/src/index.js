@@ -7,7 +7,7 @@
 // - cron              매일 20:00 KST (= 11:00 UTC) 전체 발송
 
 import { sendPushNotification, deserializeVapidKeys } from 'web-push-browser';
-import { handleAnalyze } from './analyze.js';
+import { handleAnalyze, aiStatus } from './analyze.js';
 
 // 이 Worker는 인증이 없다. 공개 앱이라 클라이언트에 숨길 비밀이 없기 때문.
 // 대신 구독 수를 막아둬서 아무나 대량 등록하지 못하게 한다.
@@ -115,7 +115,8 @@ export default {
         subscriptions: list.keys.length,
         aiProvider: provider,
         // 값은 절대 내보내지 않는다. 채워졌는지만 알려준다.
-        aiKeySet: !!(aiKey && aiKey.trim())
+        aiKeySet: !!(aiKey && aiKey.trim()),
+        ...(await aiStatus(env))
       }, 200, origin);
     }
 
