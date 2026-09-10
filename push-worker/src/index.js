@@ -119,6 +119,21 @@ export default {
       }, 200, origin);
     }
 
+    // 모델명은 구글이 예고 없이 바꾼다(gemini-2.5-flash가 어느 날 404가 됐다).
+    // 404가 나면 여기서 현재 쓸 수 있는 목록을 보고 wrangler.toml의 GEMINI_MODEL만 고치면 된다.
+    if (url.pathname === '/models') {
+      const key = env.GEMINI_API_KEY;
+      if (!key) return json({ error: 'GEMINI_API_KEY 없음' }, 503, origin);
+      const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models', {
+        headers: { 'x-goog-api-key': key }
+      });
+      const d = await r.json();
+      const models = (d.models || [])
+        .filter(m => (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map(m => m.name.replace('models/', ''));
+      return json({ ok: true, models }, 200, origin);
+    }
+
     if (request.method !== 'POST') {
       return json({ error: 'not found' }, 404, origin);
     }

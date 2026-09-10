@@ -90,7 +90,7 @@ async function callGemini(env, base64, mime) {
       })
     }
   );
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 1500)}`);
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error('Gemini가 빈 응답을 줬어요');
@@ -118,7 +118,7 @@ async function callAnthropic(env, base64, mime) {
       }]
     })
   });
-  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 1500)}`);
   const data = await res.json();
   const text = data?.content?.find(c => c.type === 'text')?.text;
   if (!text) throw new Error('Anthropic이 빈 응답을 줬어요');
@@ -132,7 +132,7 @@ function isGeoBlocked(msg) {
   return /location is not supported|FAILED_PRECONDITION/i.test(msg);
 }
 
-async function withGeoRetry(fn, attempts = 4) {
+async function withGeoRetry(fn, attempts = 3) {   // 재시도도 한도를 깎을 수 있어 넉넉히 두지 않는다
   let last;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -155,7 +155,8 @@ function parseModelJson(text) {
 }
 
 // 이 Worker는 인증이 없다. 엔드포인트가 알려져도 피해가 한도 안에서 멈추도록 하루 상한을 둔다.
-const DAILY_LIMIT = 40;
+// 구글 무료 한도가 모델당 하루 20회라 그보다 낮게 잡는다. 여기서 먼저 막으면 구글 호출 자체를 아낀다.
+const DAILY_LIMIT = 18;
 
 async function checkRateLimit(env) {
   const key = `rl:analyze:${new Date().toISOString().slice(0, 10)}`;
@@ -201,6 +202,11 @@ export async function handleAnalyze(body, env) {
     return { status: 200, payload: { ok: true, provider, workout: parsed } };
   } catch (e) {
     console.log('analyze failed', e.message);
+    if (/\b429\b|exceeded your current quota|RESOURCE_EXHAUSTED/i.test(e.message)) {
+      return { status: 429, payload: {
+        error: '구글 무료 한도(모델당 하루 20회)를 다 썼어요. 내일 다시 되고, 급하면 아래 JSON 붙여넣기를 쓰세요.'
+      } };
+    }
     if (isGeoBlocked(e.message)) {
       return { status: 503, payload: {
         error: '구글 서버가 이번 요청을 지역 문제로 거절했어요. 잠시 뒤 다시 눌러보세요.'

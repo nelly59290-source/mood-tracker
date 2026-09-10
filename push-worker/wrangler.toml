@@ -14,7 +14,7 @@ VAPID_PUBLIC_KEY = "BLOYnpEHpH7raOxMsiDc9ka3QtyfTaa-YcP16J1aqrvSWpkZosBvFhXXwOHp
 # ANTHROPIC_API_KEY secret을 넣으면 된다. 앱은 건드릴 필요 없다.
 AI_PROVIDER = "gemini"
 # 모델명이 바뀌어 404가 나면 여기만 고친다.
-GEMINI_MODEL = "gemini-3.6-flash"
+GEMINI_MODEL = "gemini-3.5-flash-lite"
 
 # 아래 둘은 secret으로 넣는다 (공개 저장소라 파일에 두지 않는다):
 #   npx wrangler secret put VAPID_PRIVATE_KEY
