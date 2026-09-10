@@ -125,6 +125,27 @@ async function callAnthropic(env, base64, mime) {
   return text;
 }
 
+// Worker는 요청마다 다른 데이터센터에서 실행된다. 그중 일부는 구글이 막아둔 지역이라
+// 같은 요청이 어떤 때는 되고 어떤 때는 "User location is not supported"로 튕긴다.
+// 지역 문제는 재시도하면 대개 다른 경로로 나가서 통과한다.
+function isGeoBlocked(msg) {
+  return /location is not supported|FAILED_PRECONDITION/i.test(msg);
+}
+
+async function withGeoRetry(fn, attempts = 4) {
+  let last;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      last = e;
+      if (!isGeoBlocked(e.message)) throw e;      // 지역 문제가 아니면 바로 포기
+      if (i < attempts - 1) await new Promise(r => setTimeout(r, 250 * (i + 1)));
+    }
+  }
+  throw last;
+}
+
 // 모델이 ```json 펜스를 붙여 보내는 경우가 있다.
 function parseModelJson(text) {
   let t = text.trim();
@@ -174,12 +195,17 @@ export async function handleAnalyze(body, env) {
   try {
     const text = provider === 'anthropic'
       ? await callAnthropic(env, body.image, mime)
-      : await callGemini(env, body.image, mime);
+      : await withGeoRetry(() => callGemini(env, body.image, mime));
     const parsed = parseModelJson(text);
     if (!Array.isArray(parsed.pieces)) parsed.pieces = [];
     return { status: 200, payload: { ok: true, provider, workout: parsed } };
   } catch (e) {
     console.log('analyze failed', e.message);
+    if (isGeoBlocked(e.message)) {
+      return { status: 503, payload: {
+        error: '구글 서버가 이번 요청을 지역 문제로 거절했어요. 잠시 뒤 다시 눌러보세요.'
+      } };
+    }
     return { status: 502, payload: { error: '사진을 읽지 못했어요: ' + e.message } };
   }
 }
