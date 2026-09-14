@@ -3,6 +3,12 @@ main = "src/index.js"
 compatibility_date = "2026-08-01"
 workers_dev = true
 
+# Worker는 기본적으로 요청한 사람(한국 폰) 가까운 데이터센터에서 돈다.
+# 그 데이터센터가 구글이 막아둔 지역이면 Gemini가 "User location is not supported"로 거절한다.
+# smart placement는 Worker가 자주 부르는 백엔드(구글) 가까이로 옮겨 실행해서 이 문제를 피한다.
+[placement]
+mode = "smart"
+
 # 20:00 KST = 11:00 UTC. 서머타임 없는 나라라 고정이면 된다.
 [triggers]
 crons = ["0 11 * * *"]

@@ -131,6 +131,11 @@ function modelChain(env) {
     .split(',').map(m => m.trim()).filter(Boolean);
 }
 
+// 모델 과부하. 잠깐 몰린 거라 다른 모델은 멀쩡한 경우가 많다.
+function isOverloaded(msg) {
+  return /\b(503|500)\b|UNAVAILABLE|high demand|overloaded|INTERNAL/i.test(msg);
+}
+
 function isQuotaExceeded(msg) {
   return /\b429\b|exceeded your current quota|RESOURCE_EXHAUSTED/i.test(msg);
 }
@@ -147,7 +152,9 @@ function isGeoBlocked(msg) {
   return /location is not supported|FAILED_PRECONDITION/i.test(msg);
 }
 
-async function withGeoRetry(fn, attempts = 3) {   // 재시도도 한도를 깎을 수 있어 넉넉히 두지 않는다
+// 같은 Worker 실행 안에서는 나가는 데이터센터가 고정이라 여기서 여러 번 재시도해도 대개 같은 곳으로 나간다.
+// 실제 복구는 앱이 요청 자체를 새로 보내는 쪽(onPhotoPicked)에서 한다.
+async function withGeoRetry(fn, attempts = 2) {
   let last;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -225,10 +232,17 @@ export async function handleAnalyze(body, env) {
           break;
         } catch (err) {
           lastErr = err;
-          if (!isQuotaExceeded(err.message)) throw err;      // 한도 문제가 아니면 내려가봐야 소용없다
-          // 이 모델은 오늘 끝났다. 다음 요청부터 건너뛰도록 기억한다.
-          await env.SUBS.put(modelCursorKey(), String(idx + 1), { expirationTtl: 172800 });
-          console.log('quota exhausted, falling back from', chain[idx]);
+          if (isQuotaExceeded(err.message)) {
+            // 이 모델은 오늘 끝났다. 다음 요청부터 건너뛰도록 기억한다.
+            await env.SUBS.put(modelCursorKey(), String(idx + 1), { expirationTtl: 172800 });
+            console.log('quota exhausted, falling back from', chain[idx]);
+          } else if (isOverloaded(err.message)) {
+            // 과부하는 일시적이다. 이번 요청만 다음 모델로 넘기고 커서는 건드리지 않는다.
+            // 커서를 옮기면 잠깐의 과부하 때문에 좋은 모델을 하루 종일 건너뛰게 된다.
+            console.log('model overloaded, trying next for this request:', chain[idx]);
+          } else {
+            throw err;                                       // 그 밖의 오류는 내려가봐야 소용없다
+          }
         }
       }
       if (!text) throw lastErr || new Error('사용할 수 있는 모델이 없어요');
@@ -240,12 +254,17 @@ export async function handleAnalyze(body, env) {
     console.log('analyze failed', e.message);
     if (/\b429\b|exceeded your current quota|RESOURCE_EXHAUSTED/i.test(e.message)) {
       return { status: 429, payload: {
-        error: '오늘 쓸 수 있는 모델을 전부 다 썼어요. 내일 다시 되고, 급하면 아래 JSON 붙여넣기를 쓰세요.'
+        code: 'quota', error: '오늘 쓸 수 있는 모델을 전부 다 썼어요. 내일 다시 되고, 급하면 아래 JSON 붙여넣기를 쓰세요.'
+      } };
+    }
+    if (isOverloaded(e.message)) {
+      return { status: 503, payload: {
+        code: 'overloaded', error: '구글 서버가 지금 붐벼요. 1~2분 뒤 다시 눌러보세요.'
       } };
     }
     if (isGeoBlocked(e.message)) {
       return { status: 503, payload: {
-        error: '구글 서버가 이번 요청을 지역 문제로 거절했어요. 잠시 뒤 다시 눌러보세요.'
+        code: 'geo', error: '구글 서버가 이번 요청을 지역 문제로 거절했어요. 잠시 뒤 다시 눌러보세요.'
       } };
     }
     return { status: 502, payload: { error: '사진을 읽지 못했어요: ' + e.message } };
