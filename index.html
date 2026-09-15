@@ -81,6 +81,34 @@
   .wo-box-sub { font-size: 11px; color: var(--ink-3); margin-top: 3px; }
   .wo-box-note { font-size: 11px; color: var(--ink-3); line-height: 1.5; margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--line); }
 
+  /* 통계 탭 운동 카드: 강도 꺾은선 + 운동 달력 */
+  .wo-rpe-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .wo-rpe-title { font-size: 12px; color: var(--ink-2); }
+  .wo-rpe-avg { font-size: 11px; color: var(--ink-3); }
+  .wo-rpe-avg strong { font-family: var(--serif); font-size: 16px; font-weight: 400; color: var(--ink); }
+  .wo-rpe-legend { font-size: 11px; color: var(--ink-3); margin-top: 4px; }
+  .wo-cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .wo-cal-cell { aspect-ratio: 1; border-radius: 8px; border: 1px solid transparent; background: var(--bg-2); padding: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: var(--sans); color: var(--ink-3); }
+  .wo-cal-cell.future { background: transparent; opacity: 0.45; }
+  .wo-cal-cell .n { font-size: 12px; line-height: 1; }
+  .wo-cal-cell.on { cursor: pointer; font-weight: 500; }
+  .wo-cal-cell.on:active { transform: scale(0.92); }
+  /* RPE 구간별로 색을 끊어서 칠한다. 연속 농도는 인접한 값끼리 구분이 안 됐음 */
+  .wo-cal-cell.lv0 { background: var(--bg-3); color: var(--ink-2); }
+  /* 글자색은 한 가지로 통일 — 가장 진한 칸에서도 대비 4.3:1 이상 나오도록 색 밝기를 맞췄다 */
+  .wo-cal-cell.lv1, .wo-cal-cell.lv2, .wo-cal-cell.lv3, .wo-cal-cell.lv4 { color: #2A1A12; }
+  .wo-cal-cell.lv1 { background: #F3E1BF; }
+  .wo-cal-cell.lv2 { background: #F2B872; }
+  .wo-cal-cell.lv3 { background: #EC8452; }
+  .wo-cal-cell.lv4 { background: #D9573A; }
+  .wo-cal-cell.solo { border-color: var(--ink); border-style: dashed; border-width: 1.5px; }
+  .wo-cal-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 10px; font-size: 11px; color: var(--ink-3); }
+  .wo-cal-legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -2px; }
+  .wo-cal-cell.selected { outline: 2px solid var(--ink); outline-offset: 1px; }
+  .wo-cal-date { font-family: var(--serif); font-size: 15px; margin-top: 14px; }
+  #wo-cal-detail .wo-box { margin-top: 8px; }
+
   /* Workout inputs */
   .wo-input { width: 100%; box-sizing: border-box; background: var(--bg-2); border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; font-size: 13px; font-family: var(--sans); color: var(--ink); }
   .wo-input::placeholder { color: var(--ink-3); }
@@ -2260,6 +2288,7 @@ async function renderStats() {
       </div>`;
     document.getElementById('stat-range').textContent = '데이터를 모으면 여기에 나타나요';
     if (quadChart) { quadChart.destroy(); quadChart = null; }
+    if (rpeChart) { rpeChart.destroy(); rpeChart = null; }
     return;
   }
 
@@ -2337,7 +2366,12 @@ async function renderStats() {
     ${renderInsightCards(recent)}
   `;
 
-  setTimeout(() => drawQuadChart(recent), 50);
+  setTimeout(() => {
+    drawQuadChart(recent);
+    drawRpeChart(recent);
+    const last = recent.filter(e => e.workout).pop();
+    if (last) selectWorkoutDay(last.date);
+  }, 50);
 }
 
 function renderInsightCards(recent) {
@@ -2430,12 +2464,73 @@ function renderInsightCards(recent) {
 // 단백질: 평균 / 목표 달성률 / 최근 14일 일일 트래킹 / 운동한 날 비교
 // 운동 인사이트. 페어 기록은 팀 공통 기록이라 솔로와 섞으면 강도 해석이 오염된다.
 // 그래서 시간 비교는 mode별로 나누고, 강도 축은 개인 체감인 RPE만 쓴다.
+let rpeChart;
+let woCalData = {};
+
+function selectWorkoutDay(key) {
+  const w = woCalData[key];
+  const box = document.getElementById('wo-cal-detail');
+  if (!w || !box) return;
+  document.querySelectorAll('.wo-cal-cell.selected').forEach(el => el.classList.remove('selected'));
+  document.querySelector(`.wo-cal-cell[data-date="${key}"]`)?.classList.add('selected');
+  const d = new Date(key + 'T00:00:00');
+  box.innerHTML = `<p class="wo-cal-date">${d.getMonth() + 1}월 ${d.getDate()}일 (${dayNamesKr[d.getDay()]})</p>`
+    + (workoutDetailHtml(w) || `<p class="wo-rpe-legend">세부 기록이 없어요</p>`);
+}
+
+function drawRpeChart(recent) {
+  if (rpeChart) { rpeChart.destroy(); rpeChart = null; }
+  const canvas = document.getElementById('rpeChart');
+  if (!canvas) return;
+
+  const rped = recent.filter(e => e.workout?.rpe != null);
+  const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const axisColor = isDark ? '#B8AE96' : '#6B6558';
+  const gridColor = isDark ? 'rgba(184,174,150,0.15)' : 'rgba(107,101,88,0.15)';
+  const lineColor = isDark ? '#D49377' : '#C97B5C';
+  const bg = isDark ? '#1C1A16' : '#FAF8F3';
+
+  rpeChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: rped.map(e => {
+        const d = new Date(e.date + 'T00:00:00');
+        return [`${d.getMonth() + 1}/${d.getDate()}`, dayNamesKr[d.getDay()]];
+      }),
+      datasets: [{
+        data: rped.map(e => e.workout.rpe),
+        borderColor: lineColor,
+        borderWidth: 2,
+        tension: 0.3,
+        pointRadius: 4.5,
+        pointHoverRadius: 6,
+        pointBorderWidth: 2,
+        pointBorderColor: lineColor,
+        pointBackgroundColor: rped.map(e => e.workout.mode === 'solo' ? bg : lineColor)
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: {
+        y: {
+          min: 1, max: 10,
+          ticks: { stepSize: 3, font: { size: 10 }, color: axisColor },
+          grid: { color: gridColor }
+        },
+        x: {
+          ticks: { font: { size: 10 }, color: axisColor, maxRotation: 0, autoSkip: true, autoSkipPadding: 6 },
+          grid: { display: false }
+        }
+      }
+    }
+  });
+}
+
 function renderWorkoutInsight(recent) {
   const workouts = recent.filter(e => e.workout);
   if (workouts.length < 3) return '';
-
-  const byDate = {};
-  recent.forEach(e => { byDate[e.date] = e; });
 
   const solo = workouts.filter(e => e.workout.mode === 'solo');
   const pair = workouts.filter(e => e.workout.mode === 'pair');
@@ -2445,67 +2540,60 @@ function renderWorkoutInsight(recent) {
       <p class="card-label">🔥 운동</p>
       <p class="card-hint">최근 ${recent.length}일 중 ${workouts.length}일 운동${pair.length ? ` · 페어 ${pair.length}일` : ''}${solo.length ? ` · 솔로 ${solo.length}일` : ''}</p>`;
 
+  // 체감 강도 추이 (꺾은선). 운동한 날만 점으로 찍는다 — 쉰 날을 0으로 넣으면 추세가 왜곡된다
   const rped = workouts.filter(e => e.workout.rpe != null);
-  if (rped.length >= 3) {
+  if (rped.length >= 2) {
     const avgRpe = mean(rped.map(e => e.workout.rpe));
-    html += `<div class="detail-row"><span class="lbl">평균 체감 강도</span>RPE ${avgRpe.toFixed(1)}</div>`;
+    html += `
+      <div class="wo-rpe-head">
+        <span class="wo-rpe-title">체감 강도 추이</span>
+        <span class="wo-rpe-avg">평균 RPE <strong>${avgRpe.toFixed(1)}</strong></span>
+      </div>
+      <div style="position: relative; height: 170px;"><canvas id="rpeChart"></canvas></div>
+      ${solo.length ? `<p class="wo-rpe-legend">● 페어 &nbsp;○ 솔로</p>` : ''}`;
   }
 
-  // 운동 강도 → 다음날 기분
-  const pairsRpeNext = [];
-  rped.forEach(e => {
-    const d = new Date(e.date + 'T00:00:00');
-    d.setDate(d.getDate() + 1);
-    const next = byDate[dateKey(d.getFullYear(), d.getMonth(), d.getDate())];
-    if (next) pairsRpeNext.push({ rpe: e.workout.rpe, v: next.valence });
-  });
+  // 운동 달력: 통계 범위(최근 30일)를 주 단위로 펼친다. 날짜를 누르면 그날 세부 기록
+  const workoutByDate = {};
+  workouts.forEach(e => { workoutByDate[e.date] = e.workout; });
+  woCalData = workoutByDate;
 
-  if (pairsRpeNext.length >= 4) {
-    const hard = pairsRpeNext.filter(x => x.rpe >= 7);
-    const easy = pairsRpeNext.filter(x => x.rpe <= 6);
-    if (hard.length >= 2 && easy.length >= 2) {
-      const hv = mean(hard.map(x => x.v)), ev = mean(easy.map(x => x.v));
-      const diff = hv - ev;
-      const verdict = Math.abs(diff) < 0.3
-        ? '강도에 따른 차이는 아직 뚜렷하지 않아요'
-        : (diff > 0
-            ? `빡세게 한 다음날이 <strong>${diff.toFixed(1)} 더 좋았어요</strong>`
-            : `빡세게 한 다음날이 <strong>${Math.abs(diff).toFixed(1)} 낮았어요</strong>`);
-      html += `
-        <div style="background: var(--bg-2); border-radius: 10px; padding: 12px 14px; margin: 10px 0;">
-          <p style="font-size: 12px; color: var(--ink-2); margin: 0 0 8px; line-height: 1.6;">운동 강도 → 다음날 기분</p>
-          <div class="detail-row"><span class="lbl">RPE 7+ 다음날</span>${hv.toFixed(1)}</div>
-          <div class="detail-row"><span class="lbl">RPE 6- 다음날</span>${ev.toFixed(1)}</div>
-          <p style="font-size: 12px; color: var(--ink-3); margin: 8px 0 0; line-height: 1.5;">${verdict} <span style="opacity:0.7;">(n=${pairsRpeNext.length})</span></p>
-        </div>`;
+  const start = new Date();
+  start.setDate(start.getDate() - 30);
+  start.setDate(start.getDate() - start.getDay());
+  const end = new Date();
+  end.setDate(end.getDate() + (6 - end.getDay()));
+  const today = todayKey();
+
+  let cells = '';
+  for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const key = dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+    const w = workoutByDate[key];
+    const dayNum = d.getDate();
+    const label = dayNum === 1 || key === dateKey(start.getFullYear(), start.getMonth(), start.getDate())
+      ? `${d.getMonth() + 1}/${dayNum}` : dayNum;
+    if (w) {
+      const lv = w.rpe == null ? 0 : w.rpe <= 4 ? 1 : w.rpe <= 6 ? 2 : w.rpe <= 8 ? 3 : 4;
+      cells += `<button class="wo-cal-cell on lv${lv}${w.mode === 'solo' ? ' solo' : ''}" data-date="${key}"
+        onclick="selectWorkoutDay('${key}')"><span class="n">${label}</span></button>`;
     } else {
-      html += `<p style="font-size: 12px; color: var(--ink-3); margin: 10px 0; line-height: 1.5;">강도별 비교는 RPE 높은 날·낮은 날이 각각 2일 이상 쌓이면 나와요.</p>`;
+      cells += `<div class="wo-cal-cell${key > today ? ' future' : ''}"><span class="n">${label}</span></div>`;
     }
-  } else {
-    html += `<p style="font-size: 12px; color: var(--ink-3); margin: 10px 0; line-height: 1.5;">운동 다음날 기록이 4일 이상 모이면 "강도 → 다음날 기분"이 나옵니다. 지금 ${pairsRpeNext.length}일.</p>`;
   }
 
-  // 최근 기록 (하루에 종목이 여럿이면 개수를 함께 보여준다)
-  const rows = workouts.slice(-5).reverse().map(e => {
-    const w = e.workout;
-    const pcs = w.pieces || [];
-    const label = pcs.flatMap(pc => (pc.movements || []).map(mv => mv.name)).slice(0, 3).join('/')
-                  || w.strength?.movement || '운동';
-    const scores = pcs.map(pc => {
-      if (pc.timeSec != null) return secToTime(pc.timeSec);
-      if (pc.reps != null) return `${pc.reps}`;
-      return null;
-    }).filter(Boolean).join(', ');
-    const modeTag = w.mode === 'pair' ? ' · 페어' : '';
-    const countTag = pcs.length > 1 ? ` · 종목 ${pcs.length}` : '';
-    const rpeTag = w.rpe != null ? ` · RPE ${w.rpe}` : '';
-    return `<div class="detail-row"><span class="lbl">${e.date.slice(5)}${modeTag}${countTag}</span>${escapeHtml(label)}${scores ? ' · ' + scores : ''}${rpeTag}</div>`;
-  }).join('');
-  if (rows) {
-    html += `<p style="font-size: 12px; color: var(--ink-2); margin: 12px 0 6px;">최근 기록</p>${rows}`;
-    if (pair.length && solo.length) {
-      html += `<p style="font-size: 11px; color: var(--ink-3); margin: 8px 0 0; line-height: 1.5;">페어 기록은 팀 공통 기록이라 솔로 시간과 직접 비교하지 마세요.</p>`;
-    }
+  html += `
+    <div class="wo-rpe-head" style="margin-top: 18px;"><span class="wo-rpe-title">운동 달력</span><span class="wo-rpe-avg">날짜를 누르면 기록</span></div>
+    <div class="cal-dow-row">${dayNamesKr.map((n, i) => `<div class="cal-dow${i === 0 ? ' sun' : i === 6 ? ' sat' : ''}">${n}</div>`).join('')}</div>
+    <div class="wo-cal-grid">${cells}</div>
+    <div class="wo-cal-legend">
+      <span><i class="wo-cal-cell lv1"></i>RPE 1–4</span><span><i class="wo-cal-cell lv2"></i>5–6</span>
+      <span><i class="wo-cal-cell lv3"></i>7–8</span><span><i class="wo-cal-cell lv4"></i>9–10</span>
+      ${solo.length ? `<span><i class="wo-cal-cell solo" style="background:transparent;"></i>솔로</span>` : ''}
+    </div>
+    <div id="wo-cal-detail"></div>`;
+
+  if (pair.length && solo.length) {
+    html += `<p style="font-size: 11px; color: var(--ink-3); margin: 10px 0 0; line-height: 1.5;">페어 기록은 팀 공통 기록이라 솔로 시간과 직접 비교하지 마세요.</p>`;
   }
 
   html += `</div>`;
