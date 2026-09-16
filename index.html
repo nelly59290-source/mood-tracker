@@ -1440,13 +1440,14 @@ function addPiece(piece) {
     <p class="card-hint">사진에서 채워진 건 그대로 두세요. <strong>확인할 건 아래 '내 기록'뿐</strong>이에요.</p>
 
     <div class="field">
-      <p class="field-label">형식 · 라운드</p>
+      <p class="field-label">운동 방식 <span style="color: var(--ink-3); font-weight: 400;">— 화이트보드에 적힌 그대로</span></p>
       <div style="display: flex; gap: 8px;">
         <select class="wo-input wo-format" style="flex: 2;">
           ${WOD_FORMATS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}
         </select>
-        <input type="text" class="wo-input wo-rounds" inputmode="numeric" placeholder="라운드" style="flex: 1;">
+        <input type="text" class="wo-input wo-rounds" inputmode="numeric" placeholder="몇 라운드짜리" style="flex: 1;">
       </div>
+      <p style="font-size: 11px; color: var(--ink-3); margin: 6px 0 0; line-height: 1.6;">예: 보드에 <code>5 Rounds For Time</code>이면 For Time · 5. 라운드가 안 적혀 있으면 비워두세요</p>
     </div>
 
     <div class="field">
@@ -1462,12 +1463,12 @@ function addPiece(piece) {
     </div>
 
     <div class="field">
-      <p class="field-label">내 기록 <span style="color: var(--accent); font-weight: 400;">— 여기만 확인하세요</span></p>
+      <p class="field-label">내 결과 <span style="color: var(--accent); font-weight: 400;">— 내가 실제로 해낸 것. 여기만 확인하세요</span></p>
       <div style="display: flex; gap: 8px;">
-        <input type="text" class="wo-input wo-time" placeholder="시간 18:50" inputmode="numeric" style="flex: 1;">
+        <input type="text" class="wo-input wo-time" placeholder="시간 1850" inputmode="numeric" style="flex: 1;">
         <input type="text" class="wo-input wo-reps" placeholder="렙 668" inputmode="numeric" style="flex: 1;">
       </div>
-      <p style="font-size: 11px; color: var(--ink-3); margin: 6px 0 0; line-height: 1.5;">타임캡이면 렙만, AMRAP이면 라운드를 렙 칸에.</p>
+      <p class="wo-score-hint" style="font-size: 11px; color: var(--ink-3); margin: 6px 0 0; line-height: 1.6;"></p>
     </div>
 
     <div class="field" style="margin-bottom: 0;">
@@ -1483,6 +1484,13 @@ function addPiece(piece) {
 
   card.querySelector('.wo-piece-del').onclick = () => { card.remove(); renumberPieces(); };
   card.querySelector('.wo-add-move').onclick = () => addMoveRow(card.querySelector('.wo-moves'));
+  // Phone numeric keypad has no ':' — show "1850" as "18:50" once the field loses focus
+  const timeIn = card.querySelector('.wo-time');
+  timeIn.addEventListener('blur', () => {
+    const sec = parseTimeToSec(timeIn.value);
+    if (sec != null) timeIn.value = secToTime(sec);
+  });
+  card.querySelector('.wo-format').addEventListener('change', () => syncScoreHint(card));
   wrap.appendChild(card);
 
   if (piece) {
@@ -1495,6 +1503,7 @@ function addPiece(piece) {
     card.querySelector('.wo-unit').value = piece.unit || 'lb';
     card.querySelector('.wo-rx').value = piece.rx === true ? 'rx' : (piece.rx === false ? 'scaled' : '');
   }
+  syncScoreHint(card);
   return card;
 }
 
@@ -1562,7 +1571,28 @@ function syncPartnerField() {
   document.getElementById('wo-partner-field').style.display = woSel.woMode === 'pair' ? 'block' : 'none';
 }
 
-// "18:50" → 1130 / "1130" → 1130 (숫자만 오면 초로 본다)
+// The score fields read differently per format, so spell out what goes where
+function syncScoreHint(card) {
+  const fmt = card.querySelector('.wo-format').value;
+  const time = card.querySelector('.wo-time');
+  const reps = card.querySelector('.wo-reps');
+  const hint = card.querySelector('.wo-score-hint');
+  if (fmt === 'amrap') {
+    time.style.display = 'none';
+    reps.placeholder = '완료한 라운드 (예: 6)';
+    hint.innerHTML = '정해진 시간 동안 <strong>몇 라운드 돌았는지</strong>만 적으세요';
+  } else if (fmt === 'interval') {
+    time.style.display = '';
+    reps.placeholder = '개수';
+    hint.innerHTML = '보드에 적힌 대로 <strong>시간·개수 둘 다</strong> 적어도 돼요 (<code>1850</code> → 18:50)';
+  } else {
+    time.style.display = '';
+    reps.placeholder = '못 끝냈을 때 개수';
+    hint.innerHTML = '다 끝냈으면 <strong>걸린 시간</strong>만 (<code>1850</code> → 18:50, <code>20</code> → 20:00)<br>시간 안에 못 끝냈으면 시간은 비우고 <strong>한 개수</strong>만';
+  }
+}
+
+// "18:50" → 1130. Digits only (phone keypad has no ':'): "1850" → 18:50, "20" → 20:00, "930" → 9:30
 function parseTimeToSec(str) {
   if (!str) return null;
   const t = String(str).trim();
@@ -1574,8 +1604,11 @@ function parseTimeToSec(str) {
     if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
     return null;
   }
-  const n = parseInt(t, 10);
-  return isNaN(n) ? null : n;
+  if (!/^\d+$/.test(t)) return null;
+  if (t.length <= 2) return parseInt(t, 10) * 60;
+  const sec = parseInt(t.slice(-2), 10);
+  const min = parseInt(t.slice(0, -2), 10);
+  return min * 60 + sec;
 }
 
 function secToTime(sec) {
