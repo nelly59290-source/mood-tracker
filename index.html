@@ -687,6 +687,7 @@
     <p class="card-label" id="detail-date"></p>
     <div id="detail-body"></div>
     <button id="edit-day-btn" onclick="editSelectedDay()" style="display: none; width: 100%; margin-top: 12px; padding: 10px; background: transparent; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; color: var(--ink-2); cursor: pointer; font-family: var(--sans);">이 날 기록 수정</button>
+    <button id="delete-day-btn" onclick="deleteSelectedDay()" style="display: none; width: 100%; background: transparent; border: none; color: var(--ink-3); padding: 10px; font-size: 12px; font-family: var(--sans); cursor: pointer; margin-top: 2px;">이 날 기록 삭제</button>
   </div>
 </div>
 
@@ -793,18 +794,30 @@ async function getEntry(date) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const req = db.transaction(STORE, 'readonly').objectStore(STORE).get(date);
-    req.onsuccess = () => resolve(req.result || null);
+    req.onsuccess = () => resolve(req.result && !req.result.deleted ? req.result : null);
     req.onerror = () => reject(req.error);
   });
 }
 
+// 삭제된 기록(묘비)은 빼고 돌려준다. 화면·통계·내보내기는 전부 이걸 쓴다.
 async function getAllEntries() {
+  return (await getAllEntriesRaw()).filter(e => !e.deleted);
+}
+
+// 묘비까지 포함. 동기화 병합 전용.
+async function getAllEntriesRaw() {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const req = db.transaction(STORE, 'readonly').objectStore(STORE).getAll();
     req.onsuccess = () => resolve(req.result || []);
     req.onerror = () => reject(req.error);
   });
+}
+
+// 그냥 지우면 다음 동기화 때 다른 기기(Gist)에 남은 기록이 도로 내려온다.
+// 그래서 지우지 않고 savedAt이 최신인 묘비로 덮어써서, 병합에서 삭제가 이기게 한다.
+async function deleteEntry(date) {
+  await putEntry({ date: date, deleted: true, savedAt: new Date().toISOString() });
 }
 
 async function clearAllEntries() {
@@ -2172,6 +2185,8 @@ function showDayDetail(day, entry) {
   document.getElementById('detail-date').textContent = `${calYear}년 ${calMonth + 1}월 ${day}일 (${dayNamesKr[dd.getDay()]})`;
   const body = document.getElementById('detail-body');
   const editBtn = document.getElementById('edit-day-btn');
+  const deleteBtn = document.getElementById('delete-day-btn');
+  deleteBtn.style.display = entry ? 'block' : 'none';
 
   // 미래 날짜인지 확인 (오늘 23:59:59까지는 허용)
   const today = new Date();
@@ -2229,6 +2244,31 @@ function showDayDetail(day, entry) {
   editBtn.style.display = 'block';
 }
 
+
+// 그 날 엔트리 전체(감정기록 + 운동)를 지운다. 운동만 지우려면 운동 탭의 삭제 버튼.
+async function deleteSelectedDay() {
+  if (!selectedDay) return;
+  const key = dateKey(calYear, calMonth, selectedDay);
+  const entry = await getEntry(key);
+  if (!entry) return;
+  const ok = await confirmDialog(
+    '이 날 기록 삭제',
+    `${calYear}년 ${calMonth + 1}월 ${selectedDay}일의 기록을 지웁니다.${entry.workout ? ' 그 날 운동 기록도 같이 지워져요.' : ''} 되돌릴 수 없어요.`
+  );
+  if (!ok) return;
+  try {
+    await deleteEntry(key);
+  } catch (e) {
+    alert('삭제 실패: ' + e.message);
+    return;
+  }
+  // 그 날을 수정 중이던 폼이 남아 있으면 저장 시 되살아나니 비운다.
+  if (editingDate === key) resetForm();
+  await renderCalendar();
+  showDayDetail(selectedDay, null);
+  renderStreakAndSparkline();
+  autoSync();
+}
 
 // 캘린더 상세에서 운동은 감정기록과 섞이면 안 읽힌다. 별도 박스로 분리한다.
 function workoutDetailHtml(w) {
@@ -3064,7 +3104,7 @@ async function syncNow() {
   if (syncInFlight) return syncInFlight;
   syncInFlight = (async () => {
     const { entries: remote, settings: remoteSettings } = await readRemote();
-    const local = await getAllEntries();
+    const local = await getAllEntriesRaw();
     const byDate = {};
     local.forEach(e => { if (e && e.date) byDate[e.date] = e; });
 
