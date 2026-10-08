@@ -687,6 +687,7 @@
     <p class="card-label" id="detail-date"></p>
     <div id="detail-body"></div>
     <button id="edit-day-btn" onclick="editSelectedDay()" style="display: none; width: 100%; margin-top: 12px; padding: 10px; background: transparent; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; color: var(--ink-2); cursor: pointer; font-family: var(--sans);">이 날 기록 수정</button>
+    <button id="delete-mood-btn" onclick="deleteSelectedMood()" style="display: none; width: 100%; background: transparent; border: none; color: var(--ink-3); padding: 10px; font-size: 12px; font-family: var(--sans); cursor: pointer; margin-top: 2px;">감정기록만 삭제 (운동은 남김)</button>
     <button id="delete-day-btn" onclick="deleteSelectedDay()" style="display: none; width: 100%; background: transparent; border: none; color: var(--ink-3); padding: 10px; font-size: 12px; font-family: var(--sans); cursor: pointer; margin-top: 2px;">이 날 기록 삭제</button>
   </div>
 </div>
@@ -1166,7 +1167,7 @@ function switchTab(tab) {
 }
 
 async function renderStreakAndSparkline() {
-  const all = await getAllEntries();
+  const all = (await getAllEntries()).filter(hasMood);
   const byDate = {};
   all.forEach(e => { byDate[e.date] = e; });
 
@@ -1207,7 +1208,7 @@ async function saveEntry() {
   // 기존 기록이 있는지 확인 (오늘 기록 덮어쓰기 경고)
   if (!editingDate) {
     const existing = await getEntry(targetDate);
-    if (existing) {
+    if (hasMood(existing)) {
       const ok = await confirmDialog(
         '오늘 이미 기록이 있어요',
         '오늘은 이미 저장된 기록이 있어요. 캘린더에서 그 기록을 수정하는 게 좋아요. 그래도 덮어쓸까요?'
@@ -1269,7 +1270,7 @@ async function saveEntry() {
     }
     await putEntry(entry);
     const cameFromCalendar = !!editingDate;
-    const isNewEntry = !existingBefore;
+    const isNewEntry = !hasMood(existingBefore);
     resetForm();
     renderStreakAndSparkline();
     autoSync();
@@ -1710,18 +1711,28 @@ async function onWorkoutDateChange() {
   await refreshWorkoutScreen(v);
 }
 
-// 운동 저장은 그 날 엔트리의 workout 필드만 건드린다. 감정기록은 그대로 둔다.
-async function saveWorkout() {
-  const w = collectWorkout();
-  if (!w) { setWoSaveMsg('입력된 내용이 없어요', true); return; }
-  const existing = await getEntry(woDate);
-  const entry = existing ? { ...existing } : {
-    date: woDate, valence: 0, arousal: 0, peak: '', gratitude: '', tags: [],
+// 감정기록이 없는 엔트리 (운동만 있는 날, 또는 감정기록만 지운 날).
+// 예전엔 기분 0(보통)으로 채워서 통계에 가짜 '보통'이 섞였다. 이제 noMood로 표시하고 기분은 비운다.
+function moodlessEntry(date) {
+  return {
+    date: date, noMood: true, valence: null, arousal: null, peak: '', gratitude: '', tags: [],
     sleepHours: null, sleepQuality: null, exercise: null, exerciseType: [],
     selfCare: [], social: [], work: null, period: null, caffeine: 0, alcohol: 0,
     food: '', protein: null, proteinItems: {}, proteinMeals: {}, proteinExtra: 0,
     proteinNote: '', proteinEstimated: false, proteinGoal: null, weather: null
   };
+}
+
+function hasMood(e) {
+  return !!e && !e.noMood;
+}
+
+// 운동 저장은 그 날 엔트리의 workout 필드만 건드린다. 감정기록은 그대로 둔다.
+async function saveWorkout() {
+  const w = collectWorkout();
+  if (!w) { setWoSaveMsg('입력된 내용이 없어요', true); return; }
+  const existing = await getEntry(woDate);
+  const entry = existing ? { ...existing } : moodlessEntry(woDate);
   entry.workout = w;
   // RPE가 있으면 감정기록의 운동 강도를 자동으로 맞춘다 (중복 입력 제거)
   const mapped = rpeToExercise(w.rpe);
@@ -1743,9 +1754,14 @@ async function deleteWorkout() {
   if (!ok) return;
   const existing = await getEntry(woDate);
   if (!existing) return;
-  delete existing.workout;
-  existing.savedAt = new Date().toISOString();
-  await putEntry(existing);
+  if (!hasMood(existing)) {
+    // 감정기록 없이 운동만 있던 날이면 남을 게 없으니 엔트리째 지운다.
+    await deleteEntry(woDate);
+  } else {
+    delete existing.workout;
+    existing.savedAt = new Date().toISOString();
+    await putEntry(existing);
+  }
   clearWorkoutForm();
   document.getElementById('wo-delete-btn').style.display = 'none';
   setWoSaveMsg('삭제됨');
@@ -1786,13 +1802,7 @@ async function applyWorkoutPaste() {
     if (!item.date || !/^\d{4}-\d{2}-\d{2}$/.test(item.date)) { skipped++; continue; }
     const w = normalizeWorkout(item);
     const existing = await getEntry(item.date);
-    const entry = existing ? { ...existing } : {
-      date: item.date, valence: 0, arousal: 0, peak: '', gratitude: '', tags: [],
-      sleepHours: null, sleepQuality: null, exercise: null, exerciseType: [],
-      selfCare: [], social: [], work: null, period: null, caffeine: 0, alcohol: 0,
-      food: '', protein: null, proteinItems: {}, proteinMeals: {}, proteinExtra: 0,
-      proteinNote: '', proteinEstimated: false, proteinGoal: null, weather: null
-    };
+    const entry = existing ? { ...existing } : moodlessEntry(item.date);
     // 운동 직후 RPE만 먼저 찍어둔 날이 있다. 붙여넣기 JSON엔 RPE가 없으니 덮어쓰면 안 된다.
     if (w.rpe == null && existing?.workout?.rpe != null) w.rpe = existing.workout.rpe;
     if (!w.note && existing?.workout?.note) w.note = existing.workout.note;
@@ -2007,7 +2017,7 @@ async function editSelectedDay() {
 
   editingDate = key;
 
-  if (entry) {
+  if (hasMood(entry)) {
     loadEntryIntoForm(entry);
   } else {
     // 기록 없는 날 → 빈 폼으로 새로 기록
@@ -2021,7 +2031,7 @@ async function editSelectedDay() {
   const banner = document.getElementById('edit-banner');
   banner.style.display = 'flex';
   const d = new Date(calYear, calMonth, selectedDay);
-  const label = entry ? '수정 중' : (isToday ? '기록 중' : '지난 날 기록 중');
+  const label = hasMood(entry) ? '수정 중' : (isToday ? '기록 중' : '지난 날 기록 중');
   document.getElementById('edit-banner-label').textContent = label;
   document.getElementById('edit-banner-date').textContent =
     `${calYear}년 ${calMonth + 1}월 ${selectedDay}일 (${dayNamesKr[d.getDay()]})`;
@@ -2160,7 +2170,7 @@ async function renderCalendar() {
 
     const key = dateKey(calYear, calMonth, day);
     const entry = byDate[key];
-    if (entry) {
+    if (hasMood(entry)) {
       cell.style.background = valenceToColor(entry.valence);
       cell.style.color = textColorOnBg(entry.valence);
     } else {
@@ -2186,7 +2196,12 @@ function showDayDetail(day, entry) {
   const body = document.getElementById('detail-body');
   const editBtn = document.getElementById('edit-day-btn');
   const deleteBtn = document.getElementById('delete-day-btn');
+  const deleteMoodBtn = document.getElementById('delete-mood-btn');
   deleteBtn.style.display = entry ? 'block' : 'none';
+  // 감정기록과 운동이 둘 다 있을 때만 '감정기록만' 선택지를 준다. 하나뿐이면 전체 삭제와 같다.
+  deleteMoodBtn.style.display = hasMood(entry) && entry.workout ? 'block' : 'none';
+  deleteBtn.textContent = !entry ? '' : !hasMood(entry) ? '이 날 운동 기록 삭제'
+    : entry.workout ? '감정기록 + 운동 모두 삭제' : '이 날 감정기록 삭제';
 
   // 미래 날짜인지 확인 (오늘 23:59:59까지는 허용)
   const today = new Date();
@@ -2202,6 +2217,12 @@ function showDayDetail(day, entry) {
       editBtn.textContent = '이 날 기록 추가';
       editBtn.style.display = 'block';
     }
+    return;
+  }
+  if (!hasMood(entry)) {
+    body.innerHTML = '<p style="color: var(--ink-3); font-size: 13px; font-style: italic;">감정기록 없음</p>' + workoutDetailHtml(entry.workout);
+    editBtn.textContent = '이 날 감정기록 추가';
+    editBtn.style.display = 'block';
     return;
   }
   let html = `<p class="detail-meta">기분 <strong>${valenceLabel[entry.valence + 3]}</strong> · 에너지 <strong>${arousalLabel[entry.arousal + 3]}</strong></p>`;
@@ -2266,6 +2287,34 @@ async function deleteSelectedDay() {
   if (editingDate === key) resetForm();
   await renderCalendar();
   showDayDetail(selectedDay, null);
+  renderStreakAndSparkline();
+  autoSync();
+}
+
+// 감정기록만 지우고 그 날 운동은 남긴다.
+async function deleteSelectedMood() {
+  if (!selectedDay) return;
+  const key = dateKey(calYear, calMonth, selectedDay);
+  const entry = await getEntry(key);
+  if (!hasMood(entry) || !entry.workout) return;
+  const ok = await confirmDialog(
+    '감정기록 삭제',
+    `${calYear}년 ${calMonth + 1}월 ${selectedDay}일의 감정기록만 지웁니다. 운동 기록은 그대로 남아요. 되돌릴 수 없어요.`
+  );
+  if (!ok) return;
+  const next = moodlessEntry(key);
+  next.workout = entry.workout;
+  next.exercise = rpeToExercise(entry.workout.rpe) || null;
+  next.savedAt = new Date().toISOString();
+  try {
+    await putEntry(next);
+  } catch (e) {
+    alert('삭제 실패: ' + e.message);
+    return;
+  }
+  if (editingDate === key) resetForm();
+  await renderCalendar();
+  showDayDetail(selectedDay, next);
   renderStreakAndSparkline();
   autoSync();
 }
@@ -2367,15 +2416,17 @@ async function renderStats() {
 
   document.getElementById('stat-range').textContent = `${recent[0].date} ~ ${recent[recent.length-1].date} · ${recent.length}일 기록`;
 
-  const valences = recent.map(e => e.valence);
-  const arousals = recent.map(e => e.arousal);
+  // 기분 수치는 감정기록이 있는 날만. 운동만 있는 날은 운동·단백질 인사이트에만 쓴다.
+  const moodRecent = recent.filter(hasMood);
+  const valences = moodRecent.length ? moodRecent.map(e => e.valence) : [0];
+  const arousals = moodRecent.length ? moodRecent.map(e => e.arousal) : [0];
   const vAvg = mean(valences);
   const vSd = sd(valences);
   const aAvg = mean(arousals);
   const aSd = sd(arousals);
 
   const quadCounts = [0,0,0,0]; // Q1: +,+ | Q2: +,- | Q3: -,+ | Q4: -,-
-  recent.forEach(e => {
+  moodRecent.forEach(e => {
     if (e.valence >= 0 && e.arousal >= 0) quadCounts[0]++;
     else if (e.valence >= 0 && e.arousal < 0) quadCounts[1]++;
     else if (e.valence < 0 && e.arousal >= 0) quadCounts[2]++;
@@ -2440,7 +2491,7 @@ async function renderStats() {
   `;
 
   setTimeout(() => {
-    drawQuadChart(recent);
+    drawQuadChart(moodRecent);
     drawRpeChart(recent);
     const last = recent.filter(e => e.workout).pop();
     if (last) selectWorkoutDay(last.date);
@@ -2451,7 +2502,7 @@ function renderInsightCards(recent) {
   let html = '';
 
   // 수면 인사이트
-  const slept = recent.filter(e => e.sleepHours != null);
+  const slept = recent.filter(e => hasMood(e) && e.sleepHours != null);
   if (slept.length >= 3) {
     const avgSleep = mean(slept.map(e => e.sleepHours));
     const lowSleep = slept.filter(e => e.sleepHours < 7);
@@ -2498,7 +2549,7 @@ function renderInsightCards(recent) {
   // 생리 주기 인사이트
   const byPhase = { pms: [], on: [], none: [], ovulation: [] };
   recent.forEach(e => {
-    if (e.period && byPhase[e.period]) byPhase[e.period].push(e.valence);
+    if (hasMood(e) && e.period && byPhase[e.period]) byPhase[e.period].push(e.valence);
   });
   const phaseLabels = { pms: 'PMS', on: '생리중', ovulation: '배란', none: '평소' };
   const phaseRows = Object.entries(byPhase)
